@@ -1,4 +1,6 @@
-from typing import TypedDict
+from datetime import datetime, timezone
+from time import perf_counter
+from typing import Any, TypedDict
 
 from langgraph.graph import StateGraph, START, END
 
@@ -21,18 +23,57 @@ class WorkflowState(TypedDict):
     report: str
     report_path: str
     errors: list[str]
+    persist_report: bool
+    agent_trace: list[dict[str, Any]]
+
+
+def _trace_entry(
+    agent: str,
+    status: str,
+    started_at: float,
+    error_type: str | None = None,
+) -> dict[str, Any]:
+    entry = {
+        "agent": agent,
+        "status": status,
+        "duration_ms": round((perf_counter() - started_at) * 1000, 3),
+    }
+    if error_type:
+        entry["error_type"] = error_type
+    return entry
+
+
+def _append_agent_trace(report: str, trace: list[dict[str, Any]]) -> str:
+    rows = [
+        "| Agent | Status | Duration (ms) | Error type |",
+        "|---|---|---:|---|",
+    ]
+    rows.extend(
+        "| {agent} | {status} | {duration_ms:.3f} | {error_type} |".format(
+            agent=entry["agent"],
+            status=entry["status"],
+            duration_ms=entry["duration_ms"],
+            error_type=entry.get("error_type", "Not recorded"),
+        )
+        for entry in trace
+    )
+    return f"{report.rstrip()}\n\n## 7. Agent Execution Trace\n\n" + "\n".join(rows) + "\n"
 
 
 def security_node(state: WorkflowState) -> dict:
+    started_at = perf_counter()
     try:
         assessment = security_agent(state["event"])
-        return {"assessment": assessment}
+        return {
+            "assessment": assessment,
+            "agent_trace": state.get("agent_trace", []) + [
+                _trace_entry("Security Agent", "completed", started_at)
+            ],
+        }
 
     except Exception as exc:
-        error = (
-            f"Security Agent failed: "
-            f"{type(exc).__name__}: {exc}"
-        )
+        error_type = type(exc).__name__
+        error = f"Security Agent failed: {error_type}"
         print(f"[Orchestrator] {error}")
 
         assessment = SecurityAssessment(
@@ -54,19 +95,42 @@ def security_node(state: WorkflowState) -> dict:
         return {
             "assessment": assessment,
             "errors": state.get("errors", []) + [error],
+            "agent_trace": state.get("agent_trace", []) + [
+                _trace_entry(
+                    "Security Agent",
+                    "fallback",
+                    started_at,
+                    error_type,
+                )
+            ],
         }
 
 
 def diagnostic_node(state: WorkflowState) -> dict:
+    started_at = perf_counter()
     try:
         diagnostic = diagnostic_agent(state["event"])
-        return {"diagnostic": diagnostic}
+        provider_errors = getattr(diagnostic, "provider_errors", [])
+        status = (
+            "fallback"
+            if diagnostic.analysis_method == "FALLBACK" or provider_errors
+            else "completed"
+        )
+        return {
+            "diagnostic": diagnostic,
+            "agent_trace": state.get("agent_trace", []) + [
+                _trace_entry(
+                    "Diagnostic Agent",
+                    status,
+                    started_at,
+                    ", ".join(provider_errors) if provider_errors else None,
+                )
+            ],
+        }
 
     except Exception as exc:
-        error = (
-            f"Diagnostic Agent failed: "
-            f"{type(exc).__name__}: {exc}"
-        )
+        error_type = type(exc).__name__
+        error = f"Diagnostic Agent failed: {error_type}"
         print(f"[Orchestrator] {error}")
 
         diagnostic = DiagnosticReport(
@@ -90,11 +154,22 @@ def diagnostic_node(state: WorkflowState) -> dict:
         return {
             "diagnostic": diagnostic,
             "errors": state.get("errors", []) + [error],
+            "agent_trace": state.get("agent_trace", []) + [
+                _trace_entry(
+                    "Diagnostic Agent",
+                    "fallback",
+                    started_at,
+                    error_type,
+                )
+            ],
         }
 
 
 def report_node(state: WorkflowState) -> dict:
     errors = list(state.get("errors", []))
+    started_at = perf_counter()
+    report_status = "completed"
+    report_error_type = None
 
     try:
         report = generate_security_report(
@@ -104,10 +179,9 @@ def report_node(state: WorkflowState) -> dict:
         )
 
     except Exception as exc:
-        error = (
-            f"Report generation failed: "
-            f"{type(exc).__name__}: {exc}"
-        )
+        report_error_type = type(exc).__name__
+        report_status = "fallback"
+        error = f"Report generation failed: {report_error_type}"
         errors.append(error)
         print(f"[Orchestrator] {error}")
 
@@ -118,12 +192,17 @@ def report_node(state: WorkflowState) -> dict:
         report = f"""# Automotive CAN Security Report
 
 ## Detection
+- Generated at: {datetime.now(timezone.utc).isoformat()}
 - Event ID: {event.event_id}
+- Scenario ID: {event.metadata.get('scenario_id', 'Not assigned')}
+- Data provenance: {event.metadata.get('data_provenance', 'UNSPECIFIED')}
+- Event timestamp: {event.timestamp.isoformat()}
 - CAN ID: {event.can_id}
 - Channel: {event.channel}
 - Attack suspicion: {event.attack_type}
 - Detection rule: {event.detection_rule}
 - Message count: {event.message_count}
+- Detection evidence: {', '.join(event.evidence) or 'Not recorded'}
 
 ## Security Assessment
 - Risk level: {assessment.risk_level}
@@ -145,6 +224,24 @@ def report_node(state: WorkflowState) -> dict:
             + "\n"
         )
 
+    trace = list(state.get("agent_trace", [])) + [
+        _trace_entry(
+            "Report Agent",
+            report_status,
+            started_at,
+            report_error_type,
+        )
+    ]
+    report = _append_agent_trace(report, trace)
+
+    if not state["persist_report"]:
+        return {
+            "report": report,
+            "report_path": "",
+            "errors": errors,
+            "agent_trace": trace,
+        }
+
     try:
         report_path = save_security_report(
             report,
@@ -153,10 +250,7 @@ def report_node(state: WorkflowState) -> dict:
         print(f"[Report Agent] Report saved: {report_path}")
 
     except Exception as exc:
-        error = (
-            f"Report saving failed: "
-            f"{type(exc).__name__}: {exc}"
-        )
+        error = f"Report saving failed: {type(exc).__name__}"
         errors.append(error)
         report_path = ""
         print(f"[Orchestrator] {error}")
@@ -166,6 +260,7 @@ def report_node(state: WorkflowState) -> dict:
         "report": report,
         "report_path": report_path,
         "errors": errors,
+        "agent_trace": trace,
     }
 
 
@@ -184,7 +279,10 @@ def build_workflow():
     return workflow.compile()
 
 
-def run_workflow(event: SecurityEvent) -> WorkflowState:
+def run_workflow(
+    event: SecurityEvent,
+    persist_report: bool = True,
+) -> WorkflowState:
     app = build_workflow()
 
     initial_state: WorkflowState = {
@@ -194,6 +292,8 @@ def run_workflow(event: SecurityEvent) -> WorkflowState:
         "report": "",
         "report_path": "",
         "errors": [],
+        "persist_report": persist_report,
+        "agent_trace": [],
     }
 
     return app.invoke(initial_state)

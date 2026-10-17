@@ -31,3 +31,5 @@ class DiagnosticReport:
     confidence: float = 0.0
 
     analysis_method: str = "LLM"
+
+    provider_errors: list[str] = field(default_factory=list)

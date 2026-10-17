@@ -1,0 +1,132 @@
+
+import math
+import re
+from pathlib import Path
+from collections import Counter
+
+DOCUMENTS_DIR = Path(__file__).parent / "documents"
+
+
+STOPWORDS = set("""
+a an the and or but if then than so
+is are was were be been being do does did
+how what which who when where why
+of to in on at by for from with without
+as into about between versus
+could should would may might
+i you we they he she it my your our their
+this that these those
+a au aux avec ce ces dans de des du elle en et est il la le les leur
+lui ma mais me même mes moi mon ne nos notre nous on ou par pas pour
+quand que qui sa sans se ses son sous sur ta te tes toi ton tu un une
+vos votre vous comment quelle quel quelles quels fonctionne détecter
+""".split())
+
+
+
+def tokenize(text: str) -> list[str]:
+    return re.findall(r"\b[a-zA-ZÀ-ÿ0-9_]+\b", text.lower())
+
+
+def load_chunks() -> list[dict]:
+    chunks = []
+
+    for path in sorted(DOCUMENTS_DIR.glob("*.txt")):
+        text = path.read_text(encoding="utf-8")
+        sections = re.split(r"\n\s*\n", text)
+
+        for index, section in enumerate(sections, start=1):
+            section = section.strip()
+            terms = [
+                term for term in tokenize(section)
+                if term not in STOPWORDS
+            ]
+
+            if terms:
+                chunks.append({
+                    "source": path.name,
+                    "chunk_id": index,
+                    "text": section,
+                    "terms": terms,
+                    "frequencies": Counter(terms),
+                })
+
+    return chunks
+
+
+def retrieve(query: str, top_k: int = 3) -> list[dict]:
+    query_terms = [
+        term for term in tokenize(query)
+        if term not in STOPWORDS
+    ]
+
+    if not query_terms or top_k <= 0:
+        return []
+
+    chunks = load_chunks()
+    if not chunks:
+        return []
+
+    average_length = (
+        sum(len(chunk["terms"]) for chunk in chunks) / len(chunks)
+    )
+    document_count = len(chunks)
+
+    document_frequency = Counter()
+    for chunk in chunks:
+        document_frequency.update(set(chunk["terms"]))
+
+    results = []
+
+    for chunk in chunks:
+        score = 0.0
+        frequencies = chunk["frequencies"]
+        length = len(chunk["terms"])
+
+        for term in set(query_terms):
+            term_frequency = frequencies[term]
+            if term_frequency == 0:
+                continue
+
+            df = document_frequency[term]
+            inverse_frequency = math.log(
+                1 + (document_count - df + 0.5) / (df + 0.5)
+            )
+
+            k1, b = 1.5, 0.75
+            denominator = term_frequency + k1 * (
+                1 - b + b * length / average_length
+            )
+
+            score += inverse_frequency * (
+                term_frequency * (k1 + 1) / denominator
+            )
+
+        if score > 0:
+            results.append({
+                "source": chunk["source"],
+                "chunk_id": chunk["chunk_id"],
+                "score": round(score, 3),
+                "text": chunk["text"],
+            })
+
+    ranked = sorted(
+       results,
+       key=lambda item: item["score"],
+       reverse=True
+    )
+
+    selected = []
+    seen_sources = set()
+
+    for result in ranked:
+       if result["source"] in seen_sources:
+           continue
+
+       selected.append(result)
+       seen_sources.add(result["source"]) 
+
+       if len(selected) >= top_k:  
+           break   
+
+    return selected

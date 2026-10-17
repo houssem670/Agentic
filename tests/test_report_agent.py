@@ -44,6 +44,7 @@ class TestReportAgent(unittest.TestCase):
         )
 
     def test_report_contains_key_information(self):
+        self.event.metadata["scenario_id"] = "REPLAY-SYNTH-001"
         report = generate_security_report(
             self.event, self.assessment, self.diagnostic
         )
@@ -53,6 +54,7 @@ class TestReportAgent(unittest.TestCase):
         self.assertIn("0x123", report)
         self.assertIn("REPLAY_SUSPECTED", report)
         self.assertIn("MEDIUM", report)
+        self.assertIn("| Scenario ID | REPLAY-SYNTH-001 |", report)
 
     def test_report_handles_missing_information(self):
         assessment = SecurityAssessment()

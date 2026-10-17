@@ -1,6 +1,12 @@
-# Agentic AI for Automotive CAN Security
+<p align="center"><img src="backend/app/static/autosentinel-mark.svg" width="54" alt="AutoSentinel AI shield and network mark"></p>
+
+# AutoSentinel AI
+
+**Agentic AI for Automotive CAN Security**
 
 An AI-assisted automotive cybersecurity platform for detecting suspicious CAN bus traffic, assessing potential threats, supporting diagnostics, and generating structured security reports.
+
+AutoSentinel AI is the project's original product identity. It is an educational project name and does not imply a company, customer, certification, automotive manufacturer, vendor, or partnership endorsement.
 
 ## Overview
 
@@ -53,7 +59,7 @@ Virtual CAN traffic (vcan0)
    Markdown Security Report
 ```
 
-The repository also contains a LangGraph-based orchestrator for coordinating agent execution. The current `main.py` entry point runs the analysis and agent workflow directly.
+`main.py` captures traffic and runs deterministic detection, then sends each anomalous event through the LangGraph workflow in `agents/orchestrator/orchestrator.py`. The graph runs the Security, Diagnostic, and Report nodes once per event. `main.py` combines returned reports and saves them once, so batch runs do not overwrite the report for each event. Gemini is tried when configured, with Ollama as the documented provider fallback; if both diagnostic providers fail or return invalid output, the diagnostic result contains only captured evidence, unknowns, and safe checks.
 
 ## Technology Stack
 
@@ -158,7 +164,7 @@ Activate the virtual environment and run:
 python main.py
 ```
 
-The application analyzes CAN traffic and processes detected anomalies. Generated reports are saved locally under `reports/`.
+The application analyzes CAN traffic and processes detected anomalies through the LangGraph workflow. Generated reports are saved locally under `reports/`. This command requires an available `vcan0`; it is not a dashboard-only command.
 
 For meaningful results, send synthetic test traffic through `vcan0` while the analyzer is running.
 
@@ -170,7 +176,47 @@ Run the complete unit test suite:
 python -m unittest discover -s tests -v
 ```
 
-The current test suite covers anomaly detection, replay detection, agent orchestration, security assessment fallback behavior, and report generation.
+The root test suite covers frequency and replay detection, malformed CAN inputs, the synthetic benchmark, graph-backed `main.py` routing, mocked Security/Diagnostic Agent provider behavior, and report generation. Dashboard/API tests are run separately as documented in the Dashboard section. Agent tests mock provider calls; they do not require API credentials or a running Ollama service.
+
+Run the deterministic synthetic detector benchmark:
+
+```bash
+python -m tools.anomaly_detector.benchmark
+```
+
+The benchmark prints expected and actual labels, invalid-input outcomes, and binary metrics for its small fixed synthetic cases. These metrics verify implementation behavior against those fixtures only; they do not estimate performance on real vehicle traffic. Thresholds are not changed by the benchmark.
+
+## Dashboard
+
+The local dashboard reads `reports/security_report.md` and does not start a CAN capture, rerun an analysis, or call an LLM. It extracts event and agent fields from report blocks already present in that file. Reports identify data provenance as `LIVE_CAPTURE`, `SYNTHETIC_TEST_FIXTURE`, or `UNSPECIFIED`; mixed files are labeled `MIXED`. Legacy test markers are treated as synthetic, and missing provenance is never assumed to be live. Reports with a recorded generation time older than 24 hours are marked stale. The current application does not persist a separate event history, so dashboard counts cover only report records currently available; older runs overwritten by `main.py` cannot be recovered. Historical trend charts remain unavailable until event history exists. Missing report fields remain unavailable rather than being inferred.
+
+If a report has no parseable generation time, freshness is shown as unknown rather than inferred from the current time. A current generation timestamp does not prove that its underlying CAN data is live; use the provenance label as well.
+
+Install the dashboard dependencies in the project environment:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Start the dashboard from the project root:
+
+```bash
+python -m backend.app.dashboard
+```
+
+Open <http://127.0.0.1:5000>. The server binds to loopback only. Run `python main.py` separately when you want to capture CAN traffic and generate a new report; refreshing the dashboard only reloads existing files. An alternate report file can be configured with `SECURITY_REPORT_PATH` before starting the dashboard.
+
+For historical analysis, the smallest non-invasive extension would be an append-only `reports/events.jsonl` file with one structured event/assessment/diagnostic record per report entry, including event and generation timestamps. The dashboard could read that file without changing detector or agent behavior; no historical records are synthesized or backfilled from the latest report.
+
+Run dashboard API and report-parser tests with:
+
+```bash
+python -m unittest backend.tests.unit.test_dashboard -v
+```
+
+### Dashboard screenshots
+
+Start the dashboard from the project root with `python -m backend.app.dashboard`, open <http://127.0.0.1:5000>, and use the browser's screenshot or operating-system capture tool. Keep the synthetic/live provenance badge and freshness label in frame, and do not present the current synthetic fixture as live vehicle data. Never include `.env` contents, API keys, or credentials in screenshots.
 
 ## Limitations
 
@@ -184,7 +230,7 @@ The current test suite covers anomaly detection, replay detection, agent orchest
 - Expand the CAN dataset with normal and attack scenarios.
 - Add integration tests using synthetic SocketCAN traffic.
 - Improve event correlation across CAN identifiers and time windows.
-- Add a dashboard for alerts and diagnostic results.
+- Persist structured event records for cross-run correlation and trends.
 - Evaluate detection precision and false-positive rates against labeled datasets.
 
 ## Disclaimer

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" role="img" aria-labelledby="title">
+  <title id="title">AutoSentinel AI shield and connected vehicle network mark</title>
+  <path d="M24 3.5 41 10v12.2c0 10.7-6.8 18.3-17 22.3C13.8 40.5 7 32.9 7 22.2V10l17-6.5Z" stroke="#38BDF8" stroke-width="2.2" stroke-linejoin="round"/>
+  <path d="M15 25h5l3-7 4 12 3-7h3" stroke="#F1F5F9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="15" cy="25" r="1.8" fill="#38BDF8"/>
+  <circle cx="33" cy="23" r="1.8" fill="#38BDF8"/>
+</svg>

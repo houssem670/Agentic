@@ -1,6 +1,10 @@
+from contextlib import redirect_stdout
 from datetime import datetime, timezone
+from dataclasses import replace
+from io import StringIO
 from unittest.mock import patch
 
+import main
 from models.security_event import SecurityEvent
 from models.security_assessment import SecurityAssessment
 from models.diagnostic_report import DiagnosticReport
@@ -72,7 +76,19 @@ class TestOrchestrator(unittest.TestCase):
             "Further investigation required.",
         )
 
-        self.assertEqual(result["report"], "# Test report")
+        self.assertTrue(result["report"].startswith("# Test report"))
+        self.assertEqual(len(result["agent_trace"]), 3)
+        self.assertEqual(
+            [entry["agent"] for entry in result["agent_trace"]],
+            ["Security Agent", "Diagnostic Agent", "Report Agent"],
+        )
+        self.assertTrue(
+            all(entry["status"] == "completed" for entry in result["agent_trace"])
+        )
+        self.assertTrue(
+            all(entry["duration_ms"] >= 0 for entry in result["agent_trace"])
+        )
+        self.assertIn("## 7. Agent Execution Trace", result["report"])
         self.assertEqual(
             result["report_path"], "reports/test_report.md"
         )
@@ -110,6 +126,8 @@ class TestOrchestrator(unittest.TestCase):
             any("Security Agent failed" in error
                 for error in result["errors"])
         )
+        self.assertEqual(result["agent_trace"][0]["status"], "fallback")
+        self.assertEqual(result["agent_trace"][0]["error_type"], "RuntimeError")
         mock_diagnostic.assert_called_once()
         mock_generate_report.assert_called_once()
 
@@ -147,6 +165,8 @@ class TestOrchestrator(unittest.TestCase):
             any("Diagnostic Agent failed" in error
                 for error in result["errors"])
         )
+        self.assertEqual(result["agent_trace"][1]["status"], "fallback")
+        self.assertEqual(result["agent_trace"][1]["error_type"], "RuntimeError")
         mock_generate_report.assert_called_once()
         self.assertTrue(result["report"])
 
@@ -156,3 +176,52 @@ class TestOrchestrator(unittest.TestCase):
         # Verify that the compiled workflow can be constructed.
         workflow = build_workflow()
         self.assertIsNotNone(workflow)
+
+    @patch("main.save_security_report")
+    @patch("agents.orchestrator.orchestrator.save_security_report")
+    @patch("agents.orchestrator.orchestrator.generate_security_report")
+    @patch("agents.orchestrator.orchestrator.diagnostic_agent")
+    @patch("agents.orchestrator.orchestrator.security_agent")
+    @patch("main.analyze_can_traffic")
+    def test_main_uses_graph_and_saves_combined_report_once(
+        self,
+        mock_analyze,
+        mock_security,
+        mock_diagnostic,
+        mock_generate,
+        mock_graph_save,
+        mock_main_save,
+    ):
+        first_event = make_test_event()
+        second_event = replace(first_event, event_id="TEST-002")
+        normal_event = replace(
+            first_event,
+            event_id="TEST-003",
+            anomaly=False,
+            attack_type=None,
+        )
+        mock_analyze.return_value = [first_event, normal_event, second_event]
+        mock_security.return_value = SecurityAssessment(
+            threat_type="CAN_FLOODING",
+            risk_level="MEDIUM",
+            summary="Investigation required.",
+        )
+        mock_diagnostic.return_value = DiagnosticReport(
+            event_id="TEST-001",
+            diagnostic_summary="No root cause confirmed.",
+            analysis_method="TEST",
+        )
+        mock_generate.side_effect = ["first report", "second report"]
+
+        with redirect_stdout(StringIO()):
+            main.main()
+
+        self.assertEqual(mock_security.call_count, 2)
+        self.assertEqual(mock_diagnostic.call_count, 2)
+        self.assertEqual(mock_generate.call_count, 2)
+        mock_graph_save.assert_not_called()
+        mock_main_save.assert_called_once()
+        saved_report, report_path = mock_main_save.call_args.args
+        self.assertEqual(report_path, "reports/security_report.md")
+        self.assertEqual(saved_report.count("## 7. Agent Execution Trace"), 2)
+        self.assertEqual(saved_report.count("| Security Agent | completed |"), 2)

@@ -1,5 +1,6 @@
 
 import json
+import math
 import os
 
 from dotenv import load_dotenv
@@ -19,13 +20,16 @@ from rag.rag_pipeline import build_rag_context
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = os.getenv(
+GEMINI_MODEL = os.getenv(                
     "GEMINI_MODEL",
     "gemini-2.5-flash",
 )
 
 gemini_client = (
-    genai.Client(api_key=GEMINI_API_KEY)
+    genai.Client(
+        api_key=GEMINI_API_KEY,
+        http_options=types.HttpOptions(timeout=30_000),
+    )
     if GEMINI_API_KEY
     else None
 )
@@ -33,7 +37,79 @@ gemini_client = (
 ollama_llm = ChatOllama(
     model="llama3.2:3b",
     temperature=0,
+    client_kwargs={"timeout": 30},
 )
+
+
+def _parse_diagnostic_response(
+    raw_content: str,
+    event_id: str,
+    analysis_method: str,
+) -> DiagnosticReport:
+    try:
+        data = json.loads(raw_content)
+    except json.JSONDecodeError as exc:
+        raise ValueError("Diagnostic Agent returned invalid JSON.") from exc
+
+    if not isinstance(data, dict):
+        raise ValueError("Diagnostic Agent response must be a JSON object.")
+
+    summary = data.get("diagnostic_summary")
+    if not isinstance(summary, str) or not summary.strip():
+        raise ValueError("Diagnostic Agent response requires a summary.")
+
+    def normalize_list(field: str) -> list[str]:
+        value = data.get(field, [])
+        if not isinstance(value, list) or any(
+            not isinstance(item, str) for item in value
+        ):
+            raise ValueError(
+                f"Diagnostic Agent field {field!r} must be a list of strings."
+            )
+        return [item.strip() for item in value if item.strip()]
+
+    confidence = data.get("confidence", 0.0)
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+        raise ValueError("Diagnostic Agent confidence must be a finite number.")
+    if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
+        raise ValueError("Diagnostic Agent confidence must be between 0 and 1.")
+
+    return DiagnosticReport(
+        event_id=event_id,
+        diagnostic_summary=summary.strip(),
+        probable_causes=normalize_list("probable_causes"),
+        supporting_evidence=normalize_list("supporting_evidence"),
+        unknowns=normalize_list("unknowns"),
+        recommended_checks=normalize_list("recommended_checks"),
+        root_cause_confirmed=False,
+        confidence=float(confidence),
+        analysis_method=analysis_method,
+    )
+
+
+def _fallback_diagnostic(
+    event: SecurityEvent,
+    provider_errors: list[str],
+) -> DiagnosticReport:
+    return DiagnosticReport(
+        event_id=event.event_id,
+        diagnostic_summary=(
+            "Diagnostic analysis is unavailable; no root cause was established."
+        ),
+        supporting_evidence=list(event.evidence),
+        unknowns=[
+            "No validated LLM diagnostic result is available.",
+            "The event alone does not establish a vehicle fault or root cause.",
+        ],
+        recommended_checks=[
+            "Review the captured event evidence.",
+            "Compare the traffic with a trusted normal baseline.",
+        ],
+        root_cause_confirmed=False,
+        confidence=0.0,
+        analysis_method="FALLBACK",
+        provider_errors=provider_errors,
+    )
 
 
 # ==========================================================
@@ -63,7 +139,7 @@ def diagnostic_agent(
         "message_count": event.message_count,
         "window_seconds": event.window_seconds,
         "observed_rate": event.observed_rate,
-        "detection_rule": event.detection_rule,
+        "detection_rule": event.detection_rule,  
         "threshold": event.threshold,
         "anomaly": event.anomaly,
         "attack_type": event.attack_type,
@@ -158,122 +234,48 @@ Return JSON only, without Markdown fences.
     # C. Ask Gemini first
     # ------------------------------------------------------
 
-    raw_content = None
-    analysis_method = ""
-
+    providers = []
     if gemini_client is not None:
+        providers.append(("Gemini", "gemini"))
+    providers.append(("Ollama", "ollama"))
+
+    errors = []
+    for provider_name, provider in providers:
         try:
-            response = gemini_client.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0,
-                    response_mime_type="application/json",
-                ),
-            )
-
-            if response.text:
-                raw_content = response.text.strip()
-                analysis_method = "Gemini"
-
-                print(
-                    "[Diagnostic Agent] "
-                    "Analysis performed using Gemini."
+            if provider == "gemini":
+                response = gemini_client.models.generate_content(
+                    model=GEMINI_MODEL,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0,
+                        response_mime_type="application/json",
+                    ),
                 )
+                raw_content = (response.text or "").strip()
+            else:
+                response = ollama_llm.invoke(prompt)
+                raw_content = (response.content or "").strip()
 
+            if not raw_content:
+                raise ValueError("Empty provider response.")
+
+            result = _parse_diagnostic_response(
+                raw_content,
+                event.event_id,
+                provider_name,
+            )
+            result.provider_errors = list(errors)
+            print(f"[Diagnostic Agent] Analysis performed using {provider_name}.")
+            return result
         except Exception as exc:
+            errors.append(f"{provider_name}: {type(exc).__name__}")
             print(
-                "[Diagnostic Agent] "
-                f"Gemini unavailable ({type(exc).__name__}). "
-                "Trying Ollama."
+                f"[Diagnostic Agent] {provider_name} unavailable or invalid "
+                f"({type(exc).__name__})."
             )
 
-    # ------------------------------------------------------
-    # D. Ollama fallback
-    # ------------------------------------------------------
-
-    if raw_content is None:
-        try:
-            response = ollama_llm.invoke(prompt)
-            raw_content = response.content.strip()
-            analysis_method = "Ollama"
-
-            print(
-                "[Diagnostic Agent] "
-                "Analysis performed using Ollama."
-            )
-
-        except Exception as exc:
-            raise RuntimeError(
-                "Both Gemini and Ollama failed. "
-                f"Ollama error: {type(exc).__name__}: {exc}"
-            ) from exc
-
-    # ------------------------------------------------------
-    # E. Parse and validate JSON
-    # ------------------------------------------------------
-
-    try:
-        data = json.loads(raw_content)
-    except json.JSONDecodeError as exc:
-        raise ValueError(
-            "Diagnostic Agent returned invalid JSON."
-        ) from exc
-
-    if not isinstance(data, dict):
-        raise ValueError(
-            "Diagnostic Agent response must be a JSON object."
-        )
-
-    def normalize_list(value):
-        if isinstance(value, list):
-            return [
-                str(item)
-                for item in value
-                if item is not None
-            ]
-
-        if isinstance(value, str) and value.strip():
-            return [value]
-
-        return []
-
-    summary = data.get("diagnostic_summary", "")
-    if not isinstance(summary, str):
-        summary = ""
-
-    # Confidence must be numeric and finite.
-    confidence = data.get("confidence", 0.0)
-
-    try:
-        confidence = float(confidence)
-    except (TypeError, ValueError):
-        confidence = 0.0
-
-    if not 0.0 <= confidence <= 1.0:
-        confidence = 0.0
-
-    # ------------------------------------------------------
-    # F. Build the structured diagnostic report
-    # ------------------------------------------------------
-
-    return DiagnosticReport(
-        event_id=event.event_id,
-        diagnostic_summary=summary,
-        probable_causes=normalize_list(
-            data.get("probable_causes")
-        ),
-        supporting_evidence=normalize_list(
-            data.get("supporting_evidence")
-        ),
-        unknowns=normalize_list(
-            data.get("unknowns")
-        ),
-        recommended_checks=normalize_list(
-            data.get("recommended_checks")
-        ),
-        # A single anomaly event cannot confirm root cause.
-        root_cause_confirmed=False,
-        confidence=confidence,
-        analysis_method=analysis_method,
+    print(
+        "[Diagnostic Agent] No provider returned a valid assessment: "
+        + ", ".join(errors)
     )
+    return _fallback_diagnostic(event, errors)

@@ -1,4 +1,5 @@
 
+import math
 from datetime import datetime, timezone
 from typing import Optional, Sequence
 
@@ -25,6 +26,11 @@ def detect_replay_attack(
     previous_signature = None # previous_signature doit mémoriser la signature de la trame précédente.
 
     for message in messages: # Pour chaque message dans la liste messages, exécute les instructions suivantes
+        if not isinstance(message, can.Message):
+            raise TypeError("messages must contain can.Message instances")
+        if not isinstance(message.timestamp, (int, float)) or not math.isfinite(message.timestamp):
+            raise ValueError("message timestamps must be finite numbers")
+
         signature = (
             message.arbitration_id,
             bytes(message.data),

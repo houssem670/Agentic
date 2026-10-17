@@ -49,6 +49,10 @@ class TestReplayDetector(unittest.TestCase):
         with self.assertRaises(ValueError):
             detect_replay_attack([], max_burst_seconds=0)
 
+    def test_invalid_message_type_is_rejected(self):
+        with self.assertRaises(TypeError):
+            detect_replay_attack([None])
+
 
 if __name__ == "__main__":
     unittest.main()

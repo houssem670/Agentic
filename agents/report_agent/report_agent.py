@@ -11,6 +11,24 @@ from models.diagnostic_report import DiagnosticReport
 
 
 DEFAULT_OUTPUT_PATH = Path("reports/security_report.md")
+DATA_PROVENANCE_VALUES = {
+    "LIVE_CAPTURE",
+    "SYNTHETIC_TEST_FIXTURE",
+    "UNSPECIFIED",
+}
+
+
+def _data_provenance(event: SecurityEvent, diagnostic: DiagnosticReport) -> str:
+    provenance = event.metadata.get("data_provenance")
+    is_synthetic = event.event_id.upper().startswith(("TEST-", "MOCK-")) or (
+        diagnostic.analysis_method.upper() in {"MOCK", "MOCK_TEST", "SYNTHETIC"}
+    )
+    if is_synthetic:
+        return "SYNTHETIC_TEST_FIXTURE"
+    if provenance in DATA_PROVENANCE_VALUES:
+        return provenance
+
+    return "UNSPECIFIED"
 
 
 def _format_list(items: Optional[list[str]]) -> str:
@@ -67,6 +85,7 @@ def generate_security_report(
         or "Unknown"
     )
     risk_level = assessment.risk_level or "UNKNOWN"
+    data_provenance = _data_provenance(event, diagnostic)
 
     report = f"""# Automotive CAN Security Report
 
@@ -78,10 +97,12 @@ def generate_security_report(
 |---|---|
 | Generated at | {generated_at} |
 | Event ID | {event.event_id} |
+| Scenario ID | {event.metadata.get("scenario_id", "Not assigned")} |
 | Event timestamp | {_format_timestamp(event.timestamp)} |
 | CAN interface | {event.channel or "Unknown"} |
 | CAN ID | {event.can_id} |
 | Detection rule | {event.detection_rule or "Unknown"} |
+| Data provenance | {data_provenance} |
 
 ## 2. Executive Summary
 

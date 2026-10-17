@@ -1,0 +1,75 @@
+{
+  "dataset_id": "autosentinel-can-synthetic-v1",
+  "provenance": "SYNTHETIC_TEST_FIXTURE",
+  "disclaimer": "Hand-authored unit-scale scenarios. These fixtures do not represent or validate real vehicle traffic.",
+  "scenarios": [
+    {
+      "scenario_id": "FREQ-NORMAL-BELOW",
+      "family": "frequency",
+      "description": "Per-ID traffic below the configured frequency threshold.",
+      "expected": "normal",
+      "count": 50,
+      "window_seconds": 5.0,
+      "threshold": 100.0
+    },
+    {
+      "scenario_id": "FREQ-NORMAL-BOUNDARY",
+      "family": "frequency",
+      "description": "Per-ID traffic exactly at the strict frequency threshold.",
+      "expected": "normal",
+      "count": 500,
+      "window_seconds": 5.0,
+      "threshold": 100.0
+    },
+    {
+      "scenario_id": "FREQ-ANOMALY-NEAR-BOUNDARY",
+      "family": "frequency",
+      "description": "Per-ID traffic just above the configured frequency threshold.",
+      "expected": "anomaly",
+      "count": 505,
+      "window_seconds": 5.0,
+      "threshold": 100.0
+    },
+    {
+      "scenario_id": "FREQ-ANOMALY-HIGH-RATE",
+      "family": "frequency",
+      "description": "Per-ID traffic well above the configured frequency threshold.",
+      "expected": "anomaly",
+      "count": 1000,
+      "window_seconds": 5.0,
+      "threshold": 100.0
+    },
+    {
+      "scenario_id": "REPLAY-NORMAL-PAYLOAD-CHANGES",
+      "family": "replay",
+      "description": "Consecutive frames use changing payload values.",
+      "expected": "normal",
+      "payloads": [[0, 2, 3, 4], [1, 2, 3, 4], [2, 2, 3, 4], [3, 2, 3, 4], [4, 2, 3, 4], [5, 2, 3, 4]],
+      "interval_seconds": 0.01
+    },
+    {
+      "scenario_id": "REPLAY-NORMAL-SLOW-IDENTICAL",
+      "family": "replay",
+      "description": "Identical frames are separated beyond the burst-duration limit.",
+      "expected": "normal",
+      "payloads": [[1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4]],
+      "interval_seconds": 0.2
+    },
+    {
+      "scenario_id": "REPLAY-SUSPECT-6-FRAMES",
+      "family": "replay",
+      "description": "Six identical consecutive frames occur within the default burst window.",
+      "expected": "anomaly",
+      "payloads": [[1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4]],
+      "interval_seconds": 0.01
+    },
+    {
+      "scenario_id": "REPLAY-SUSPECT-MINIMUM-RUN",
+      "family": "replay",
+      "description": "The minimum configured run of five identical frames occurs rapidly.",
+      "expected": "anomaly",
+      "payloads": [[5, 6, 7, 8], [5, 6, 7, 8], [5, 6, 7, 8], [5, 6, 7, 8], [5, 6, 7, 8]],
+      "interval_seconds": 0.01
+    }
+  ]
+}

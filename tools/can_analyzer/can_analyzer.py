@@ -74,4 +74,7 @@ def analyze_can_traffic(window_seconds=5, threshold=100):
     else:
         print("No suspicious consecutive frame repetition detected.")
 
+    for detection in detections:
+        detection.metadata["data_provenance"] = "LIVE_CAPTURE"
+
     return detections

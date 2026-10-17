@@ -11,17 +11,17 @@ inspect message identifiers, payloads, frequencies and timing.
 Rule-based detection compares observations with predefined conditions.
 Examples include a message rate exceeding a configured threshold or an
 unexpected sequence of messages. Thresholds must be adapted to the
-vehicle network and operating conditions.
-
+vehicle network and operating conditions.   
+                                                                     
 3. Frequency-Based Detection
 A detector can count messages per identifier over a defined time window.
 An unusual increase may indicate flooding, but legitimate operating
-conditions can also change traffic rates.
+conditions can also change traffic rates.     
 
 4. Replay Detection
 Repeated payloads or recurring message sequences may be replay indicators.
 However, periodic CAN messages are normal in many automotive systems.
-Detection should consider timing, sequence context and baseline traffic.
+Detection should consider timing, sequence context and baseline traffic. 
 
 5. Payload-Based Detection
 Payload analysis can identify unexpected values or changes in message

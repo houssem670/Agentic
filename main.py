@@ -1,13 +1,7 @@
 
 from tools.can_analyzer.can_analyzer import analyze_can_traffic
-from agents.security_agent.security_agent import security_agent
-from agents.diagnostic_agent.diagnostic_agent import diagnostic_agent
-from agents.report_agent.report_agent import (
-    generate_security_report,
-    save_security_report,
-)
-from models.security_assessment import SecurityAssessment
-from models.diagnostic_report import DiagnosticReport
+from agents.orchestrator.orchestrator import run_workflow
+from agents.report_agent.report_agent import save_security_report
 
 
 def main():
@@ -35,63 +29,31 @@ def main():
         print(f"CAN ID: {detection.can_id}")
         print(f"Detection rule: {detection.detection_rule}")
 
-        # 3. Security Agent
         try:
-            assessment = security_agent(detection)
+            workflow = run_workflow(detection, persist_report=False)
         except Exception as exc:
-            print(f"[Security Agent] Failed: {exc}")
-            assessment = SecurityAssessment(
-                threat_type=detection.attack_type,
-                risk_level="UNKNOWN",
-                summary="Security assessment could not be completed.",
-                unknowns=[f"Security Agent error: {type(exc).__name__}"],
+            print(
+                "[Orchestrator] Workflow failed: "
+                f"{type(exc).__name__}"
             )
+            continue
+
+        assessment = workflow["assessment"]
+        diagnostic = workflow["diagnostic"]
 
         print("\n--- SECURITY ASSESSMENT ---")
         print(f"Threat type: {assessment.threat_type}")
         print(f"Risk level: {assessment.risk_level}")
         print(f"Summary: {assessment.summary}")
 
-        # 4. Diagnostic Agent
-        try:
-            diagnostic = diagnostic_agent(detection)
+        print("\n--- DIAGNOSTIC AGENT ---")
+        print(f"Analysis method: {diagnostic.analysis_method}")
+        print(f"Confidence: {diagnostic.confidence:.2f}")
+        print(f"Root cause confirmed: {diagnostic.root_cause_confirmed}")
+        print(diagnostic.diagnostic_summary)
 
-            print("\n--- DIAGNOSTIC AGENT ---")
-            print(f"Analysis method: {diagnostic.analysis_method}")
-            print(f"Confidence: {diagnostic.confidence:.2f}")
-            print(f"Root cause confirmed: {diagnostic.root_cause_confirmed}")
-            print(diagnostic.diagnostic_summary)
-
-        except Exception as exc:
-            print(f"[Diagnostic Agent] Failed: {exc}")
-
-            diagnostic = DiagnosticReport(
-                event_id=detection.event_id,
-                diagnostic_summary=(
-                    "Diagnostic analysis could not be completed."
-                ),
-                unknowns=[
-                    f"Diagnostic Agent error: {type(exc).__name__}"
-                ],
-                root_cause_confirmed=False,
-                analysis_method="ERROR",
-            )
-
-        # 5. Report Agent
-        try:
-            report = generate_security_report(
-                event=detection,
-                assessment=assessment,
-                diagnostic=diagnostic,
-            )
-            reports.append(report)
-            print("[Report Agent] Report generated successfully.")
-
-        except Exception as exc:
-            print(
-                f"[Report Agent] Failed: "
-                f"{type(exc).__name__}: {exc}"
-            )
+        reports.append(workflow["report"])
+        print("[Report Agent] Report generated successfully.")
 
     # 6. Save all generated reports into one Markdown file
     if reports:
