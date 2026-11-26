@@ -82,13 +82,29 @@ function renderBarChart(targetId, values) {
     target.innerHTML = '<div class="timeline-empty">No event type data in available reports.</div>';
     return;
   }
-  const maximum = Math.max(...entries.map((entry) => entry[1]), 1);
-  entries.forEach(([label, count]) => {
-    const row = document.createElement('div');
-    row.className = 'bar-row';
-    row.innerHTML = `<span class="bar-label" title="${escapeHtml(label)}">${escapeHtml(label)}</span><span class="bar-track"><span class="bar-fill" style="width:${count / maximum * 100}%"></span></span><span class="bar-value">${count}</span>`;
-    target.append(row);
+  const palette = ['#2F7BFF', '#22D3EE', '#22C55E', '#FACC15', '#F97316', '#A78BFA'];
+  const total = entries.reduce((sum, [, count]) => sum + count, 0);
+  let angle = 0;
+  const stops = entries.map(([, count], i) => {
+    const start = angle;
+    angle += (count / total) * 360;
+    return `${palette[i % palette.length]} ${start}deg ${angle}deg`;
   });
+  const wrap = document.createElement('div');
+  wrap.className = 'donut-wrap';
+  const donut = document.createElement('div');
+  donut.className = 'donut';
+  donut.style.background = `conic-gradient(${stops.join(',')})`;
+  donut.innerHTML = `<div class="donut-center"><strong>${total}</strong><span>total records</span></div>`;
+  const legend = document.createElement('ul');
+  legend.className = 'donut-legend';
+  entries.forEach(([label, count], i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<i style="background:${palette[i % palette.length]}"></i><span>${escapeHtml(label)}</span><span class="pct">${Math.round(count / total * 100)}%</span><strong>${count}</strong>`;
+    legend.append(li);
+  });
+  wrap.append(donut, legend);
+  target.append(wrap);
 }
 
 function renderRiskChart(values) {
@@ -270,6 +286,13 @@ function renderAgentTrace(trace) {
     ? 'Trace unavailable'
     : failed ? 'Execution error recorded' : fallback ? 'Fallback recorded' : 'All stages recorded';
   workflowState.className = `status-badge ${!hasTrace ? 'neutral' : failed ? 'failed' : fallback ? 'fallback' : 'completed'}`;
+  document.querySelectorAll('.workflow-node').forEach((node) => {
+  const name = node.textContent.split('\n')[0].trim().toLowerCase().split(' ')[0];
+  const match = trace.find((entry) => String(entry.agent || '').toLowerCase().includes(name));
+  node.dataset.state = match?.status || '';
+  node.querySelector('small')?.remove();
+  if (match) node.insertAdjacentHTML('beforeend', `<small>${escapeHtml(match.status)}</small>`);
+  });
   trace.forEach((entry) => {
     const item = document.createElement('li');
     item.className = 'trace-row';
@@ -315,6 +338,44 @@ function openEvent(event) {
   $('event-dialog').showModal();
 }
 
+
+
+function renderRecentEvents() {
+  const list = $('recent-events');
+  list.replaceChildren();
+  if (!events.length) {
+    list.innerHTML = '<li class="list-empty">No events recorded.</li>';
+    return;
+  }
+  events.slice(0, 5).forEach((event) => {
+    const li = document.createElement('li');
+    const risk = event.security?.risk_level || 'Not recorded';
+    const rate = event.observed_rate == null ? 'rate not recorded' : `${event.observed_rate} msg/s`;
+    li.innerHTML = `<span class="risk-badge ${riskClass(event.security?.risk_level)}">${escapeHtml(risk)}</span>
+      <div><strong>${escapeHtml(classificationFor(event))}</strong>
+      <small>${escapeHtml(shortValue(event.can_id))} · ${escapeHtml(formatDate(event.timestamp))} · ${escapeHtml(rate)}</small></div>`;
+    li.tabIndex = 0;
+    li.addEventListener('click', () => openEvent(event));
+    li.addEventListener('keydown', (e) => { if (e.key === 'Enter') openEvent(event); });
+    list.append(li);
+  });
+}
+
+function renderSystemStatus(health, report) {
+  const rows = [
+    ['Backend API', health.status === 'ok' ? ['OK', 'ok'] : ['Unavailable', 'bad']],
+    ['Report file', report.available ? ['Found', 'ok'] : ['Missing', 'bad']],
+    ['Report parser', health.invalid_report_blocks ? [`${health.invalid_report_blocks} malformed`, 'warn'] : ['No errors', 'ok']],
+    ['Event history', health.history_available === true ? ['Available', 'ok'] : ['Not persisted', 'warn']],
+  ];
+  const list = $('system-status');
+  list.replaceChildren();
+  rows.forEach(([name, [label, state]]) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span>${escapeHtml(name)}</span><span class="sys-pill ${state}">${escapeHtml(label)}</span>`;
+    list.append(li);
+  });
+}
 async function refreshDashboard() {
   $('connection-label').textContent = 'Refreshing local data';
   $('global-error').classList.add('hidden');
@@ -351,6 +412,8 @@ async function refreshDashboard() {
     $('overview').setAttribute('aria-busy', 'false');
     $('events-loading').classList.add('hidden');
     setAgentPanels(latestRecord);
+    renderRecentEvents();
+    renderSystemStatus(health, report);
     const freshness = report.freshness?.state || 'unknown';
     const [provenanceLabel, provenanceClass] = provenanceDisplay(
       report.data_provenance || health.data_provenance || 'UNSPECIFIED'
@@ -467,7 +530,7 @@ document.querySelectorAll('[data-nav]').forEach((link) => link.addEventListener(
 let storedTheme = 'dark';
 let storedSidebar = null;
 try {
-  storedTheme = localStorage.getItem(THEME_STORAGE_KEY) || 'light';
+  storedTheme = localStorage.getItem(THEME_STORAGE_KEY) || 'dark';
   storedSidebar = localStorage.getItem(SIDEBAR_STORAGE_KEY);
 } catch {}
 hasSidebarPreference = storedSidebar !== null;

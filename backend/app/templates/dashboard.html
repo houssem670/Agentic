@@ -11,7 +11,16 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/layout.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/autosentinel-theme.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/autosentinel-photos.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/autosentinel-charts.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/autosentinel-palette.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/autosentinel-report.css') }}">
   <script src="{{ url_for('static', filename='dashboard.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='dashboard-charts.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='dashboard-history.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='dashboard-palette.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='dashboard-report.js') }}" defer></script>
 </head>
 
 <body>
@@ -21,7 +30,7 @@
     <a class="brand-mark" href="#overview" aria-label="AutoSentinel AI overview">
       <img class="brand-symbol" src="{{ url_for('static', filename='autosentinel-mark.svg') }}" alt="">
       <span class="brand-copy">
-        <strong>AutoSentinel <em>AI</em></strong>
+        <strong>CAN<em>Sentinel</em></strong>
         <small>VEHICLE NETWORK SECURITY</small>
       </span>
     </a>
@@ -83,7 +92,7 @@
       <div class="title-lockup">
         <nav class="breadcrumb" aria-label="Breadcrumb">
           <img class="header-brand-symbol" src="{{ url_for('static', filename='autosentinel-mark.svg') }}" alt="">
-          <span>AutoSentinel AI</span><span aria-hidden="true">/</span>
+          <span>CANSentinel</span><span aria-hidden="true">/</span>
           <span id="breadcrumb-current">Overview</span>
         </nav>
         <h1 id="page-heading">Security operations</h1>
@@ -117,7 +126,7 @@
     <section id="overview" class="overview-section page-section" aria-labelledby="overview-title" aria-busy="true">
 
       <!-- NEW AUTOMOTIVE HERO BANNER -->
-      <section class="automotive-hero" aria-label="Automotive cybersecurity introduction">
+      <section class="automotive-hero has-photo" aria-label="Automotive cybersecurity introduction">
         <div class="hero-content">
           <span class="hero-tag">AUTOMOTIVE CYBERSECURITY</span>
           <h2>Intelligent Vehicle Protection</h2>
@@ -218,6 +227,19 @@
           <div id="timeline-chart" class="timeline-chart" role="group" aria-label="Historical CAN event trend"></div>
         </article>
       </div>
+            <div class="insight-grid">
+        <article class="panel">
+          <div class="panel-heading"><div><p class="eyebrow">DETECTION LOG</p><h3>Recent events</h3></div><a class="panel-link" href="#traffic">View all</a></div>
+          <ul id="recent-events" class="recent-events"></ul>
+        </article>
+
+        <article class="panel">
+          <div class="panel-heading"><div><p class="eyebrow">VERIFIED CHECKS</p><h3>System status</h3></div></div>
+          <ul id="system-status" class="system-status"></ul>
+        </article>
+
+          <div class="photo-banner" aria-hidden="true"><span>Safer vehicles.<br>Smarter decisions.</span></div>
+          </div>
     </section>
 
     <section id="traffic" class="panel event-panel page-section" aria-labelledby="events-title">

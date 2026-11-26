@@ -1,0 +1,185 @@
+/* Load AFTER autosentinel-photos.css */
+
+/* ---------- KPI cards: colored icon tiles ---------- */
+body .stat-card { border-top: 2px solid var(--kpi, var(--brand)); }
+body .stat-grid .stat-card:nth-child(1) { --kpi: #2F7BFF; }
+body .stat-grid .stat-card:nth-child(2) { --kpi: #EF4444; }
+body .stat-grid .stat-card:nth-child(3) { --kpi: #A78BFA; }
+body .stat-grid .stat-card:nth-child(4) { --kpi: #FACC15; }
+body .stat-card-head svg {
+  box-sizing: content-box;
+  width: 20px;
+  height: 20px;
+  padding: 8px;
+  border-radius: 10px;
+  stroke: var(--kpi);
+  background: color-mix(in srgb, var(--kpi) 16%, transparent);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--kpi) 28%, transparent);
+}
+body .stat-grid .stat-card:nth-child(2) .stat-value:not(:empty) { color: #FCA5A5; }
+
+/* ---------- Risk levels: vertical columns ---------- */
+body .risk-columns {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+  align-items: end;
+  padding: 8px 4px 0;
+}
+body .risk-col { display: grid; justify-items: center; gap: 4px; }
+body .risk-col-count { font-weight: 700; font-size: 16px; }
+body .risk-col-track {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  max-width: 46px;
+  height: 130px;
+  border-radius: 8px 8px 0 0;
+  background: rgba(143, 163, 191, 0.08);
+  overflow: hidden;
+}
+body .risk-col-bar { width: 100%; border-radius: 6px 6px 0 0; transition: height .4s ease; }
+body .risk-col-bar.critical { background: linear-gradient(180deg, #F87171, #DC2626); box-shadow: 0 0 14px rgba(239,68,68,.55); }
+body .risk-col-bar.high { background: linear-gradient(180deg, #FB923C, #EA580C); box-shadow: 0 0 14px rgba(249,115,22,.5); }
+body .risk-col-bar.medium { background: linear-gradient(180deg, #FDE047, #EAB308); box-shadow: 0 0 14px rgba(250,204,21,.45); }
+body .risk-col-bar.low { background: linear-gradient(180deg, #4ADE80, #16A34A); box-shadow: 0 0 14px rgba(34,197,94,.45); }
+body .risk-col-bar.unknown { background: linear-gradient(180deg, #94A3B8, #64748B); }
+body .risk-col-label { font-size: 12px; color: var(--text-secondary); }
+body .risk-col small { color: var(--text-tertiary); font-size: 11px; }
+body .risk-col:nth-child(1) .risk-col-label { color: #F87171; }
+body .risk-col:nth-child(2) .risk-col-label { color: #FB923C; }
+body .risk-col:nth-child(3) .risk-col-label { color: #FACC15; }
+body .risk-col:nth-child(4) .risk-col-label { color: #4ADE80; }
+
+/* ---------- Trend line ---------- */
+body .trend-svg { width: 100%; height: 200px; display: block; }
+body .trend-line { stroke: #22D3EE; stroke-width: 2.5; stroke-linejoin: round; filter: drop-shadow(0 0 6px rgba(34, 211, 238, .6)); }
+body .trend-dot { fill: #0D1627; stroke: #22D3EE; stroke-width: 2; }
+body .trend-axis { stroke: rgba(143, 163, 191, .3); stroke-width: 1; }
+body .trend-label { fill: var(--text-tertiary); font-size: 11px; }
+
+/* Badge "Synthetic test data" */
+body #data-provenance { display: none; }
+
+/* Badge "Stale · 6d" */
+body #top-report-freshness { display: none; }
+
+/* Indicateur "Backend online" */
+body #health-indicator { display: none; }
+
+/* Bloc "LAST ANALYSIS" + date */
+body .refresh-meta { display: none; }
+
+/* One view at a time */
+body .page-section { display: none; }
+body:not([data-view]) #overview,
+body[data-view="overview"] #overview,
+body[data-view="traffic"] #traffic,
+body[data-view="threats"] #threats,
+body[data-view="workflow"] #workflow,
+body[data-view="diagnostics"] #diagnostics,
+body[data-view="report"] #report { display: block; }
+
+/* Insight cards spacing */
+body .insight-grid > .panel { padding: 20px 24px; }
+body .insight-grid .panel-heading { margin-bottom: 8px; gap: 12px; }
+
+/* Compact empty trend card */
+body .timeline-chart { min-height: 0; }
+body .timeline-chart .timeline-empty { padding: 8px 0 4px; min-height: 0; }
+
+/* Consistent table headers */
+body table thead th { text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 600; }
+
+/* Hide "Local workspace" and "Data provenance" in the sidebar */
+body .rail-workspace { display: none; }
+body .rail-bottom { display: none; }
+
+/* No duplicate titles in single views */
+body:not([data-view="overview"]) .analysis-section .section-heading h2,
+body:not([data-view="overview"]) .report-heading h2 { display: none; }
+body .section-heading-inset h2 { font-size: 0; }
+body .section-heading-inset .count-pill { font-size: 12px; }
+
+/* Footer at the bottom */
+body .content { min-height: 100vh; display: flex; flex-direction: column; }
+body .page-footer { margin-top: auto; padding-top: 24px; color: var(--text-tertiary); font-size: 12px; }
+
+/* Lists as cards */
+body .detail-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+body .detail-list li {
+  padding: 10px 14px; border: 1px solid var(--border); border-left: 3px solid var(--brand);
+  border-radius: 8px; background: rgba(47, 123, 255, 0.06);
+}
+body #security-evidence li { border-left-color: var(--cyan); }
+body #security-unknowns li, body #diagnostic-unknowns li { border-left-color: var(--medium); }
+body #security-recommendations li, body #diagnostic-checks li { border-left-color: var(--low); }
+body .detail-list li.list-empty { border-left-color: var(--unknown); color: var(--text-tertiary); }
+body .agent-summary { font-size: 18px; line-height: 1.45; }
+
+/* Confidence ring */
+body .confidence-card { display: flex; align-items: center; gap: 18px; margin: 16px 0; }
+body .confidence-card small { display: block; color: var(--text-tertiary); margin-top: 4px; max-width: 42ch; }
+body .confidence-ring {
+  --pct: 0; position: relative; width: 92px; height: 92px; border-radius: 50%; flex: none;
+  display: grid; place-items: center;
+  background: conic-gradient(var(--cyan) calc(var(--pct) * 1%), rgba(143, 163, 191, .15) 0);
+  box-shadow: 0 0 18px rgba(34, 211, 238, .2);
+}
+body .confidence-ring::after { content: ""; position: absolute; inset: 10px; border-radius: 50%; background: var(--surface); }
+body .confidence-ring span { position: relative; z-index: 1; font-weight: 700; font-size: 18px; }
+body .diagnostic-meta > div:nth-child(2) { display: none; }
+
+/* Traffic mini stats */
+body .traffic-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 0 24px 16px; }
+body .mini-stat { padding: 12px 16px; border: 1px solid var(--border); border-top: 2px solid var(--kpi); border-radius: 10px; background: rgba(47, 123, 255, .05); }
+body .mini-stat span { display: block; color: var(--text-secondary); font-size: 12px; }
+body .mini-stat strong { display: block; margin-top: 4px; font-size: 22px; }
+
+/* Reports */
+body #report-status { display: none; }
+body .markdown-body { max-width: 980px; }
+body .markdown-body table { width: 100%; }
+@media (max-width: 900px) { body .traffic-summary { grid-template-columns: repeat(2, 1fr); } }
+
+/* Agents page */
+body #workflow .workflow-panel { padding: 28px; }
+body #workflow .workflow-definition { display: none; }
+body .agent-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; margin-bottom: 20px; }
+body .agent-card {
+  position: relative; display: flex; flex-direction: column; gap: 14px;
+  min-height: 320px; padding: 24px;
+  border: 1px solid var(--border); border-top: 3px solid var(--agent);
+  border-radius: 14px; background: color-mix(in srgb, var(--agent) 6%, var(--surface));
+}
+body .agent-card:not(:last-child)::after {
+  content: "\2192"; position: absolute; right: -24px; top: 50%;
+  transform: translateY(-50%); color: var(--cyan); font-size: 20px;
+}
+body .agent-card header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+body .agent-card h3 { flex: 1; margin: 0; font-size: 18px; }
+body .agent-step {
+  display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%;
+  font-weight: 700; color: var(--agent); border: 2px solid var(--agent);
+  background: color-mix(in srgb, var(--agent) 15%, transparent);
+}
+body .agent-role { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+body .agent-facts { display: grid; gap: 10px; margin: auto 0 0; padding-top: 14px; border-top: 1px solid var(--border); }
+body .agent-facts div { display: flex; justify-content: space-between; gap: 16px; font-size: 13px; }
+body .agent-facts dt { color: var(--text-tertiary); flex: none; }
+body .agent-facts dd { margin: 0; font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+@media (max-width: 1100px) {
+  body .agent-cards { grid-template-columns: 1fr; }
+  body .agent-card:not(:last-child)::after { display: none; }
+}
+
+body .report-archive { margin: 20px 0 28px; }
+body .archive-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 12px; }
+body .archive-actions { display: flex; gap: 8px; white-space: nowrap; }
+body .archive-actions .button { padding: 6px 12px; font-size: 12px; }
+body .archive-empty { color: var(--text-secondary); }
+body #report-archive tr.active-row { background: var(--brand-soft); }
+
+/* Hide the System status card and rebalance the row */
+body .insight-grid > .panel:nth-child(2) { display: none; }
+body .insight-grid { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); }

@@ -100,6 +100,27 @@ Metadata:
 {metadata_text}
 """
 
+    elif event.detection_rule == "ISOLATION_FOREST":
+
+        event_details = f"""
+Event ID: {event.event_id}
+Timestamp: {event.timestamp}
+Event Type: {event.event_type}
+CAN ID: {event.can_id}
+Channel: {event.channel}
+
+Detection Rule: {event.detection_rule}
+Anomaly Detected: {event.anomaly}
+Observation Window: {event.window_seconds} seconds
+Isolation Forest anomaly score: {event.metadata.get("anomaly_score")}
+
+Evidence:
+{evidence_text}
+
+Metadata:
+{metadata_text}
+"""
+
     else:
 
         event_details = f"""
@@ -201,6 +222,14 @@ For FREQUENCY_THRESHOLD:
   detector results support that conclusion.
 - If anomaly is false, do not describe this event as a
   frequency anomaly.
+
+For ISOLATION_FOREST:
+
+- The anomaly score is relative to the learned normal baseline;
+  it is not a probability that an attack occurred.
+- A high anomaly score does not prove an attack or malicious intent.
+- Treat the score and feature deviations as indicators for
+  investigation, and distinguish them from confirmed facts.
 
 For all events:
 

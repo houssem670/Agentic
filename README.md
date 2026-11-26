@@ -233,6 +233,39 @@ Start the dashboard from the project root with `python -m backend.app.dashboard`
 - Persist structured event records for cross-run correlation and trends.
 - Evaluate detection precision and false-positive rates against labeled datasets.
 
+## Simulation et évaluation
+
+- `tools/traffic_simulator` génère des trames CAN synthétiques reproductibles, étiquetées normales ou comme flooding, replay, spoofing et fuzzing.
+- En mode hors ligne, il produit un fichier horodaté sans utiliser `vcan0`.
+- Le détecteur non supervisé Isolation Forest utilise un modèle par CAN ID, entraîné uniquement sur du trafic normal.
+- Générer 180 s de trafic : `python -m tools.traffic_simulator.simulator --mode offline --duration 180 --seed 42 --output reports/can_traffic.csv --attacks flooding,replay,spoofing,fuzzing`.
+- Évaluer les règles : `python -m scripts.evaluate_rules`.
+- Évaluer les règles, le ML et leur combinaison OU : `python -m scripts.evaluate_ml --seeds 42,43,44,45,46`.
+- Exécuter ces commandes depuis la racine du dépôt.
+
+## Résultats et limites
+
+Moyenne ± écart-type sur 5 scénarios simulés de 180 s, avec un entraînement sur 300 s de trafic normal :
+
+| Détecteur | Précision | Recall | F1 | Faux positifs |
+|---|---|---|---|---|
+| Règles seules | 0.476 ± 0.008 | 0.835 ± 0.025 | 0.606 ± 0.010 | 0.263 ± 0.010 |
+| ML seul (Isolation Forest) | 0.891 ± 0.045 | 0.950 ± 0.052 | 0.918 ± 0.030 | 0.034 ± 0.017 |
+| Règles + ML (OU) | 0.498 ± 0.014 | 1.000 ± 0.000 | 0.665 ± 0.013 | 0.289 ± 0.017 |
+
+### Limites
+
+- Les données d'entraînement et de test sont synthétiques et proviennent du même simulateur.
+- Le spoofing simulé se distingue en partie par sa fréquence ; il est donc plus facile à détecter qu'un spoofing réaliste.
+- Chaque scénario comporte 40 fenêtres d'attaque.
+- Aucune validation n'a été effectuée sur un jeu de données public (HCRL Car-Hacking, ROAD) ni sur un véhicule réel.
+- Le seuil fixe des règles, 100 msg/s, correspond à la cadence d'un ID légitime, ce qui explique les faux positifs.
+- La combinaison des règles et du ML en OU dégrade la précision.
+
+### Prochaines étapes
+
+Évaluer le détecteur sur HCRL ou ROAD et simuler un spoofing plus réaliste.
+
 ## Disclaimer
 
 This project is intended for education and authorized security research in isolated test environments. Use virtual CAN interfaces and simulated traffic only.

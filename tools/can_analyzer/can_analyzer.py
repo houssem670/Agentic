@@ -1,20 +1,22 @@
 
 import time
 from collections import Counter
+from typing import Sequence
 
 import can
 
 from tools.anomaly_detector.anomaly_detector import detect_frequency_anomaly
 from tools.anomaly_detector.replay_detector import detect_replay_attack
+from models.security_event import SecurityEvent
 
 
-def analyze_can_traffic(window_seconds=5, threshold=100):
+def capture_can_messages(window_seconds=5, channel="vcan0"):
     bus = can.interface.Bus(
-        channel="vcan0",
+        channel=channel,
         interface="socketcan"
     )
 
-    print(f"Listening on vcan0 for {window_seconds} seconds...")
+    print(f"Listening on {channel} for {window_seconds} seconds...")
 
     messages = []
     start_time = time.time()
@@ -29,6 +31,15 @@ def analyze_can_traffic(window_seconds=5, threshold=100):
     finally:
         bus.shutdown()
 
+    return messages
+
+
+def analyze_can_messages(
+    messages: Sequence[can.Message],
+    window_seconds=5,
+    threshold=100,
+    channel="vcan0",
+) -> list[SecurityEvent]:
     counts = Counter(
         hex(message.arbitration_id)
         for message in messages
@@ -48,6 +59,7 @@ def analyze_can_traffic(window_seconds=5, threshold=100):
             window_seconds=window_seconds,
             threshold=threshold
         )
+        detection.channel = channel
 
         print("Frequency detection:", detection)
         detections.append(detection)
@@ -57,7 +69,7 @@ def analyze_can_traffic(window_seconds=5, threshold=100):
 
     replay_event = detect_replay_attack(
         messages=messages,
-        channel="vcan0"
+        channel=channel
     )
 
     if replay_event is not None:
@@ -75,6 +87,18 @@ def analyze_can_traffic(window_seconds=5, threshold=100):
         print("No suspicious consecutive frame repetition detected.")
 
     for detection in detections:
-        detection.metadata["data_provenance"] = "LIVE_CAPTURE"
+        detection.metadata["data_provenance"] = (
+            "LIVE_CAPTURE" if channel == "vcan0" else "SYNTHETIC_TEST_FIXTURE"
+        )
 
     return detections
+
+
+def analyze_can_traffic(window_seconds=5, threshold=100):
+    messages = capture_can_messages(window_seconds=window_seconds)
+    return analyze_can_messages(
+        messages,
+        window_seconds=window_seconds,
+        threshold=threshold,
+        channel="vcan0",
+    )

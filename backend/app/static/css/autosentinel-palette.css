@@ -1,0 +1,164 @@
+/* Load LAST (after autosentinel-charts.css). Colors and structure only. */
+
+/* ---------- Palette 1: Indigo (default) ---------- */
+:root:not([data-theme="light"]) {
+  --bg: #0A0F23;
+  --bg-glow-a: rgba(99, 102, 241, 0.20);
+  --bg-glow-b: rgba(34, 211, 238, 0.10);
+  --sidebar: #0D1430;
+  --sidebar-2: #0A0F23;
+  --surface: #131B3B;
+  --surface-secondary: #19224A;
+  --surface-hover: #1E2957;
+  --card-top: #172044;
+  --card-bottom: #101837;
+  --border: rgba(129, 140, 248, 0.26);
+  --text: #EEF0FF;
+  --text-secondary: #A5ADD6;
+  --text-tertiary: #7F89B8;
+  --brand: #6366F1;
+  --brand-2: #8B5CF6;
+  --cyan: #22D3EE;
+  --brand-soft: rgba(99, 102, 241, 0.16);
+}
+
+/* ---------- Palette 2: Teal ---------- */
+:root:not([data-theme="light"])[data-palette="teal"] {
+  --bg: #041519;
+  --bg-glow-a: rgba(20, 184, 166, 0.20);
+  --bg-glow-b: rgba(56, 189, 248, 0.10);
+  --sidebar: #061E24;
+  --sidebar-2: #041519;
+  --surface: #0A2830;
+  --surface-secondary: #0F3540;
+  --surface-hover: #134551;
+  --card-top: #0D303A;
+  --card-bottom: #082028;
+  --border: rgba(45, 212, 191, 0.26);
+  --text: #ECFEFF;
+  --text-secondary: #9CC7CC;
+  --text-tertiary: #6FA0A7;
+  --brand: #14B8A6;
+  --brand-2: #0EA5E9;
+  --cyan: #67E8F9;
+  --brand-soft: rgba(20, 184, 166, 0.16);
+}
+
+/* ---------- Palette 3: Graphite ---------- */
+:root:not([data-theme="light"])[data-palette="graphite"] {
+  --bg: #0E1014;
+  --bg-glow-a: rgba(245, 158, 11, 0.13);
+  --bg-glow-b: rgba(148, 163, 184, 0.08);
+  --sidebar: #14171D;
+  --sidebar-2: #0E1014;
+  --surface: #1A1E26;
+  --surface-secondary: #212631;
+  --surface-hover: #2A3040;
+  --card-top: #1E232D;
+  --card-bottom: #161A21;
+  --border: rgba(148, 163, 184, 0.24);
+  --text: #F3F4F6;
+  --text-secondary: #A3ABB9;
+  --text-tertiary: #7C8596;
+  --brand: #F59E0B;
+  --brand-2: #F97316;
+  --cyan: #FBBF24;
+  --brand-soft: rgba(245, 158, 11, 0.15);
+}
+
+/* ---------- Page background and structure ---------- */
+body {
+  background:
+    radial-gradient(1000px 520px at 90% -8%, var(--bg-glow-a, rgba(99,102,241,.2)), transparent 60%),
+    radial-gradient(800px 460px at -5% 105%, var(--bg-glow-b, rgba(34,211,238,.1)), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+}
+body .rail {
+  background: linear-gradient(180deg, var(--sidebar), var(--sidebar-2));
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.25);
+}
+body .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+body .panel,
+body .stat-card,
+body .agent-card {
+  background: linear-gradient(180deg, var(--card-top, var(--surface)), var(--card-bottom, var(--surface)));
+  border-color: var(--border);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+body .panel:hover,
+body .stat-card:hover {
+  border-color: color-mix(in srgb, var(--brand) 60%, transparent);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3), 0 0 26px color-mix(in srgb, var(--brand) 20%, transparent);
+}
+
+/* Section titles with an accent bar */
+body .section-heading h2,
+body .overview-heading h2 {
+  position: relative;
+  padding-left: 14px;
+}
+body .section-heading h2::before,
+body .overview-heading h2::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12%;
+  bottom: 12%;
+  width: 4px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, var(--brand), var(--brand-2));
+}
+body .eyebrow { color: color-mix(in srgb, var(--brand) 55%, var(--text-tertiary)); }
+
+/* ---------- Accent usages that were hard-coded blue ---------- */
+body .rail-link.active,
+body .hero-button,
+body .button-primary {
+  background: linear-gradient(90deg, var(--brand), var(--brand-2));
+  box-shadow: 0 0 20px color-mix(in srgb, var(--brand) 40%, transparent);
+}
+body .rail-workspace,
+body .rail-bottom,
+body table thead th {
+  background: var(--brand-soft);
+}
+body .brand-mark strong em { color: var(--cyan); }
+body .automotive-hero {
+  border-color: var(--border);
+}
+body .automotive-hero.has-photo {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--bg) 96%, transparent) 0%, color-mix(in srgb, var(--bg) 80%, transparent) 40%, color-mix(in srgb, var(--brand) 14%, transparent) 100%),
+    url("../img/hero-car.jpg") center 70% / cover no-repeat,
+    linear-gradient(120deg, var(--bg), var(--surface));
+}
+body .photo-banner {
+  background:
+    linear-gradient(180deg, transparent 30%, color-mix(in srgb, var(--bg) 88%, transparent) 100%),
+    url("../img/banner-car.jpg") center / cover no-repeat,
+    linear-gradient(135deg, var(--surface), var(--bg));
+}
+body .donut::after,
+body .confidence-ring::after { background: var(--card-bottom, var(--surface)); }
+body .trend-dot { fill: var(--card-bottom, #0D1627); }
+body select, body input[type="text"], body input[type="date"], body input[type="search"] {
+  background: var(--surface);
+  border-color: var(--border);
+}
+body table tbody tr:hover { background: var(--surface-hover); }
+
+/* ---------- Palette button ---------- */
+body .palette-button { position: relative; }
+body .palette-button .swatch {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: conic-gradient(var(--brand), var(--brand-2), var(--cyan), var(--brand));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--brand) 55%, transparent);
+}

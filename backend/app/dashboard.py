@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from collections import Counter
@@ -9,12 +10,13 @@ from typing import Any
 
 import bleach
 import markdown
-from flask import Flask, jsonify, render_template, send_file
+from flask import Flask, jsonify, render_template, request, send_file
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_REPORT_PATH = PROJECT_ROOT / "reports" / "security_report.md"
 RISK_LEVELS = {"LOW", "MEDIUM", "HIGH", "CRITICAL", "UNKNOWN"}
+RISK_RANK = {"UNKNOWN": 0, "LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
 DATA_PROVENANCE_VALUES = {
     "LIVE_CAPTURE",
     "SYNTHETIC_TEST_FIXTURE",
@@ -268,6 +270,134 @@ def _report_provenance(records: list[dict[str, Any]]) -> str:
     return values.pop() if len(values) == 1 else "MIXED"
 
 
+def _render_markdown(text: str) -> str:
+    rendered = markdown.markdown(
+        text,
+        extensions=["tables", "fenced_code", "sane_lists"],
+    )
+    return bleach.clean(
+        rendered,
+        tags=ALLOWED_HTML_TAGS,
+        attributes={"a": ["href", "title"], "th": ["align"], "td": ["align"]},
+        protocols={"http", "https", "mailto"},
+        strip=True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# History: every report file in the reports folder (and reports/history/)
+# ---------------------------------------------------------------------------
+
+def _report_files(app: Flask) -> list[Path]:
+    """Current report first, then archived reports (newest file name first)."""
+    main = _report_path(app)
+    folder = main.parent
+    candidates: list[Path] = [main] if main.is_file() else []
+    for directory in (folder / "history", folder):
+        if directory.is_dir():
+            candidates.extend(sorted(directory.glob("*.md"), reverse=True))
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for path in candidates:
+        resolved = path.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            unique.append(path)
+    return unique
+
+
+def _archive_current_report(app: Flask) -> None:
+    """Keep a copy of the current report in reports/history/ when its content is new.
+
+    The Report Agent may overwrite security_report.md on every run. Copying each new
+    version means earlier analyses stay available. The copy is idempotent: identical
+    content is never archived twice.
+    """
+    main = _report_path(app)
+    if not main.is_file():
+        return
+    try:
+        data = main.read_bytes()
+        if b"# Automotive CAN Security Report" not in data:
+            return
+        digest = hashlib.sha256(data).hexdigest()
+        history = main.parent / "history"
+        if history.is_dir():
+            for existing in history.glob("*.md"):
+                if hashlib.sha256(existing.read_bytes()).hexdigest() == digest:
+                    return
+        history.mkdir(exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+        (history / f"security_report_{stamp}.md").write_bytes(data)
+    except OSError:
+        return
+
+
+def _load_history(app: Flask) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Path]]:
+    """Return (all unique records, report list, report id -> path)."""
+    _archive_current_report(app)
+    folder = _report_path(app).parent
+    records: list[dict[str, Any]] = []
+    reports: list[dict[str, Any]] = []
+    paths: dict[str, Path] = {}
+    seen_hashes: set[str] = set()
+    seen_keys: set[tuple[Any, ...]] = set()
+
+    for path in _report_files(app):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            continue
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        if digest in seen_hashes:
+            continue
+        seen_hashes.add(digest)
+        file_records, _ = parse_report(text)
+        if not file_records:
+            continue
+
+        try:
+            report_id = path.resolve().relative_to(folder.resolve()).as_posix()
+        except ValueError:
+            report_id = path.name
+        paths[report_id] = path
+
+        fresh = [
+            record for record in file_records
+            if (record["event_id"], record.get("timestamp"), record.get("generated_at")) not in seen_keys
+        ]
+        seen_keys.update(
+            (record["event_id"], record.get("timestamp"), record.get("generated_at"))
+            for record in file_records
+        )
+        for record in fresh:
+            record["source_report"] = report_id
+        records.extend(fresh)
+
+        generated_at = _latest_timestamp(file_records, "generated_at")
+        risks = [r["security"]["risk_level"] for r in file_records if r["security"].get("risk_level")]
+        reports.append({
+            "id": report_id,
+            "file_name": path.name,
+            "generated_at": generated_at,
+            "record_count": len(file_records),
+            "highest_risk": max(risks, key=lambda level: RISK_RANK.get(level, 0)) if risks else None,
+            "data_provenance": _report_provenance(file_records),
+            "freshness": _report_freshness(generated_at)["state"],
+        })
+
+    floor = datetime.min.replace(tzinfo=timezone.utc)
+
+    def sort_key(report: dict[str, Any]) -> datetime:
+        parsed = _parse_timestamp(report["generated_at"])
+        if parsed is None:
+            return floor
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+    reports.sort(key=sort_key, reverse=True)
+    return records, reports, paths
+
+
 def create_app(report_path: str | Path | None = None) -> Flask:
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config["REPORT_PATH"] = Path(
@@ -298,12 +428,12 @@ def create_app(report_path: str | Path | None = None) -> Flask:
 
     @app.get("/api/events")
     def events():
-        _, records, _ = _load_report(app)
+        records, _, _ = _load_history(app)
         return jsonify({"events": [{key: value for key, value in record.items() if key != "report_markdown"} for record in records]})
 
     @app.get("/api/summary")
     def summary():
-        _, records, _ = _load_report(app)
+        records, reports, _ = _load_history(app)
         rules = Counter(record.get("detection_rule") for record in records if record.get("detection_rule"))
         risks = Counter(record["security"]["risk_level"] for record in records if record["security"].get("risk_level"))
         types = Counter(record.get("attack_type") or record.get("event_type") for record in records if record.get("attack_type") or record.get("event_type"))
@@ -316,13 +446,47 @@ def create_app(report_path: str | Path | None = None) -> Flask:
             "risk_levels": dict(risks),
             "event_types": dict(types),
             "reports_in_latest_file": len(records),
+            "report_files": len(reports),
             "latest_analysis_timestamp": _latest_timestamp(records, "timestamp"),
             "latest_report_timestamp": _latest_timestamp(records, "generated_at"),
             "detection_rules": dict(rules),
-            "history_available": False,
+            "history_available": len(records) > 1,
             "data_provenance": _report_provenance(records),
-            "statistics_scope": "Currently available report records only; no event history is persisted.",
+            "statistics_scope": "All parseable report records found in the reports folder and its history archive.",
         })
+
+    @app.get("/api/reports")
+    def report_list():
+        _, reports, _ = _load_history(app)
+        return jsonify({"reports": reports})
+
+    @app.get("/api/report")
+    def report_by_id():
+        _, reports, paths = _load_history(app)
+        report_id = request.args.get("id", "")
+        path = paths.get(report_id)
+        if path is None:
+            return jsonify({"available": False, "error": "Unknown report."}), 404
+        meta = next((report for report in reports if report["id"] == report_id), {})
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            return jsonify({"available": False, "error": "The report could not be read."}), 404
+        return jsonify({
+            "available": True,
+            "id": report_id,
+            "html": _render_markdown(text),
+            "generated_at": meta.get("generated_at"),
+            "record_count": meta.get("record_count", 0),
+        })
+
+    @app.get("/api/report/download")
+    def download_report_by_id():
+        _, _, paths = _load_history(app)
+        path = paths.get(request.args.get("id", ""))
+        if path is None or not path.is_file():
+            return jsonify({"error": "Unknown report."}), 404
+        return send_file(path, as_attachment=True, download_name=path.name, mimetype="text/markdown")
 
     @app.get("/api/reports/latest")
     def latest_report():
@@ -336,21 +500,10 @@ def create_app(report_path: str | Path | None = None) -> Flask:
                 "record_count": 0,
                 "data_provenance": "UNSPECIFIED",
             })
-        rendered = markdown.markdown(
-            text,
-            extensions=["tables", "fenced_code", "sane_lists"],
-        )
-        safe_html = bleach.clean(
-            rendered,
-            tags=ALLOWED_HTML_TAGS,
-            attributes={"a": ["href", "title"], "th": ["align"], "td": ["align"]},
-            protocols={"http", "https", "mailto"},
-            strip=True,
-        )
         generated_at = _latest_timestamp(records, "generated_at")
         return jsonify({
             "available": True,
-            "html": safe_html,
+            "html": _render_markdown(text),
             "generated_at": generated_at,
             "freshness": _report_freshness(generated_at),
             "record_count": len(records),

@@ -1,0 +1,94 @@
+/* Load LAST (after autosentinel-palette.css). Styles the structured report viewer. */
+
+body .markdown-body { max-width: none; }
+body .report-doc { margin: 8px 0 40px; }
+body .report-doc + .report-doc { padding-top: 32px; border-top: 1px dashed var(--border); }
+
+/* Header */
+body .report-doc-head h3 { margin: 0 0 6px; font-size: 24px; }
+body .report-doc-head p { margin: 0; color: var(--text-secondary); font-size: 13px; }
+
+/* Summary chips */
+body .report-chips {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+body .report-chip {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-top: 2px solid var(--brand);
+  border-radius: 10px;
+  background: var(--brand-soft);
+  min-width: 0;
+}
+body .report-chip span { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-tertiary); }
+body .report-chip strong { font-size: 15px; overflow-wrap: anywhere; }
+body .report-chip .risk-badge { align-self: flex-start; }
+
+/* Table of contents */
+body .report-toc { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+body .report-toc button {
+  padding: 7px 14px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text-secondary); font-size: 12px; font-weight: 600;
+}
+body .report-toc button:hover { color: var(--text); border-color: var(--brand); background: var(--brand-soft); }
+body .report-toc .toc-toggle { margin-left: auto; color: var(--cyan); }
+
+/* Section cards */
+body .report-section {
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--c, var(--brand));
+  border-radius: 12px;
+  background: linear-gradient(180deg, var(--card-top, var(--surface)), var(--card-bottom, var(--surface)));
+  scroll-margin-top: 110px;
+}
+body .report-section > summary {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 18px; cursor: pointer; list-style: none;
+}
+body .report-section > summary::-webkit-details-marker { display: none; }
+body .report-section > summary::after {
+  content: ""; margin-left: auto; width: 8px; height: 8px;
+  border-right: 2px solid var(--text-tertiary); border-bottom: 2px solid var(--text-tertiary);
+  transform: rotate(45deg); transition: transform .2s ease;
+}
+body .report-section[open] > summary::after { transform: rotate(-135deg); }
+body .rs-num {
+  display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
+  font-weight: 700; font-size: 13px; color: var(--c);
+  border: 2px solid var(--c);
+  background: color-mix(in srgb, var(--c) 15%, transparent);
+}
+body .rs-title { font-size: 16px; font-weight: 700; }
+body .rs-body { padding: 4px 18px 18px; }
+
+/* Content inside sections */
+body .rs-body h3, body .rs-body h4 {
+  margin: 20px 0 8px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--c, var(--cyan));
+}
+body .rs-body p { margin: 6px 0; line-height: 1.65; color: var(--text-secondary); }
+body .rs-body ul { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 8px; }
+body .rs-body li {
+  padding: 9px 14px; border-radius: 8px;
+  border: 1px solid var(--border); border-left: 3px solid var(--c, var(--brand));
+  background: color-mix(in srgb, var(--c, var(--brand)) 6%, transparent);
+  line-height: 1.5;
+}
+
+/* Tables */
+body .rs-body .table-wrap { overflow-x: auto; margin: 8px 0; border: 1px solid var(--border); border-radius: 10px; }
+body .rs-body table { width: 100%; border-collapse: collapse; }
+body .rs-body th, body .rs-body td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+body .rs-body tr:last-child td { border-bottom: 0; }
+body .rs-body thead th { background: var(--brand-soft); color: var(--text-secondary); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
+body .rs-body tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.025); }
+body .rs-body td:first-child { width: 32%; font-weight: 600; color: var(--text-secondary); }
+body .rs-body td:last-child { font-family: var(--font-mono); font-size: 13px; overflow-wrap: anywhere; }
+
+@media (max-width: 700px) { body .rs-body td:first-child { width: 45%; } }
