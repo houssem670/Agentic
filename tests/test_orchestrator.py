@@ -46,6 +46,7 @@ class TestOrchestrator(unittest.TestCase):
             threat_type="CAN_FLOODING",
             risk_level="HIGH",
             summary="Suspicious CAN traffic frequency.",
+            provider="OpenRouter",
         )
 
         mock_diagnostic.return_value = DiagnosticReport(
@@ -75,6 +76,8 @@ class TestOrchestrator(unittest.TestCase):
             report_args["diagnostic"].diagnostic_summary,
             "Further investigation required.",
         )
+        self.assertEqual(report_args["security_provider"], "OpenRouter")
+        self.assertEqual(result["security_provider"], "OpenRouter")
 
         self.assertTrue(result["report"].startswith("# Test report"))
         self.assertEqual(len(result["agent_trace"]), 3)
@@ -122,6 +125,7 @@ class TestOrchestrator(unittest.TestCase):
         result = run_workflow(make_test_event())
 
         self.assertEqual(result["assessment"].risk_level, "UNKNOWN")
+        self.assertEqual(result["security_provider"], "Safe fallback")
         self.assertTrue(
             any("Security Agent failed" in error
                 for error in result["errors"])

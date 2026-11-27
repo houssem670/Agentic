@@ -10,6 +10,7 @@ __pycache__/
 .venv-*/
 .pytest_cache/
 models/ml_detector.joblib
+models/hcrl_ml_detector.joblib
 
 # Coverage
 .coverage

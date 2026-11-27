@@ -12,6 +12,7 @@ from models.diagnostic_report import DiagnosticReport
 
 DEFAULT_OUTPUT_PATH = Path("reports/security_report.md")
 DATA_PROVENANCE_VALUES = {
+    "HCRL_BENCHMARK",
     "LIVE_CAPTURE",
     "SYNTHETIC_TEST_FIXTURE",
     "UNSPECIFIED",
@@ -20,6 +21,9 @@ DATA_PROVENANCE_VALUES = {
 
 def _data_provenance(event: SecurityEvent, diagnostic: DiagnosticReport) -> str:
     provenance = event.metadata.get("data_provenance")
+    if provenance == "HCRL_BENCHMARK":
+        return provenance
+
     is_synthetic = event.event_id.upper().startswith(("TEST-", "MOCK-")) or (
         diagnostic.analysis_method.upper() in {"MOCK", "MOCK_TEST", "SYNTHETIC"}
     )
@@ -69,6 +73,7 @@ def generate_security_report(
     event: SecurityEvent,
     assessment: SecurityAssessment,
     diagnostic: DiagnosticReport,
+    security_provider: str | None = None,
 ) -> str:
     """
     Generate a Markdown report from existing detector and agent results.
@@ -86,6 +91,14 @@ def generate_security_report(
     )
     risk_level = assessment.risk_level or "UNKNOWN"
     data_provenance = _data_provenance(event, diagnostic)
+    if security_provider is None:
+        security_provider = assessment.provider
+    if not isinstance(security_provider, str) or security_provider not in {
+        "Gemini",
+        "OpenRouter",
+        "Safe fallback",
+    }:
+        security_provider = "Unknown"
 
     report = f"""# Automotive CAN Security Report
 
@@ -129,6 +142,7 @@ def generate_security_report(
 | Field | Value |
 |---|---|
 | Threat classification | {threat_type} |
+| Provider | {security_provider} |
 | Assessed risk level | {risk_level} |
 | Assessment confidence | {_format_confidence(assessment.confidence)} |
 

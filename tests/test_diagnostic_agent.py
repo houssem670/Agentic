@@ -1,5 +1,6 @@
 import json
 import unittest
+from dataclasses import replace
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
@@ -42,9 +43,9 @@ class TestDiagnosticAgent(unittest.TestCase):
         self.addCleanup(patcher.stop)
         patcher.start()
 
-    @patch("agents.diagnostic_agent.diagnostic_agent.ollama_llm")
+    @patch("agents.diagnostic_agent.diagnostic_agent.openrouter_chat_completion")
     @patch("agents.diagnostic_agent.diagnostic_agent.gemini_client")
-    def test_valid_gemini_output_is_structured(self, gemini, ollama):
+    def test_valid_gemini_output_is_structured(self, gemini, openrouter):
         self._rag_patch()
         gemini.models.generate_content.return_value.text = json.dumps(
             self.valid_response
@@ -56,25 +57,25 @@ class TestDiagnosticAgent(unittest.TestCase):
         self.assertEqual(result.analysis_method, "Gemini")
         self.assertEqual(result.confidence, 0.6)
         self.assertFalse(result.root_cause_confirmed)
-        ollama.invoke.assert_not_called()
+        openrouter.assert_not_called()
 
-    @patch("agents.diagnostic_agent.diagnostic_agent.ollama_llm")
+    @patch("agents.diagnostic_agent.diagnostic_agent.openrouter_chat_completion")
     @patch("agents.diagnostic_agent.diagnostic_agent.gemini_client")
-    def test_invalid_gemini_json_falls_back_to_ollama(self, gemini, ollama):
+    def test_invalid_gemini_json_falls_back_to_openrouter(self, gemini, openrouter):
         self._rag_patch()
         gemini.models.generate_content.return_value.text = "{invalid"
-        ollama.invoke.return_value.content = json.dumps(self.valid_response)
+        openrouter.return_value = json.dumps(self.valid_response)
 
         result = diagnostic_agent(self.event)
 
-        self.assertEqual(result.analysis_method, "Ollama")
+        self.assertEqual(result.analysis_method, "OpenRouter")
         self.assertEqual(result.provider_errors, ["Gemini: ValueError"])
-        ollama.invoke.assert_called_once()
+        openrouter.assert_called_once()
 
-    @patch("agents.diagnostic_agent.diagnostic_agent.ollama_llm")
+    @patch("agents.diagnostic_agent.diagnostic_agent.openrouter_chat_completion")
     @patch("agents.diagnostic_agent.diagnostic_agent.gemini_client")
     def test_missing_optional_fields_default_without_inventing_causes(
-        self, gemini, ollama
+        self, gemini, openrouter
     ):
         self._rag_patch()
         gemini.models.generate_content.return_value.text = json.dumps(
@@ -87,29 +88,29 @@ class TestDiagnosticAgent(unittest.TestCase):
         self.assertEqual(result.supporting_evidence, [])
         self.assertEqual(result.confidence, 0.0)
         self.assertFalse(result.root_cause_confirmed)
-        ollama.invoke.assert_not_called()
+        openrouter.assert_not_called()
 
-    @patch("agents.diagnostic_agent.diagnostic_agent.ollama_llm")
+    @patch("agents.diagnostic_agent.diagnostic_agent.openrouter_chat_completion")
     @patch("agents.diagnostic_agent.diagnostic_agent.gemini_client")
-    def test_missing_summary_tries_ollama(self, gemini, ollama):
+    def test_missing_summary_tries_openrouter(self, gemini, openrouter):
         self._rag_patch()
         gemini.models.generate_content.return_value.text = json.dumps(
             {"probable_causes": ["Unverified claim"]}
         )
-        ollama.invoke.return_value.content = json.dumps(self.valid_response)
+        openrouter.return_value = json.dumps(self.valid_response)
 
         result = diagnostic_agent(self.event)
 
-        self.assertEqual(result.analysis_method, "Ollama")
+        self.assertEqual(result.analysis_method, "OpenRouter")
         self.assertEqual(result.probable_causes, self.valid_response["probable_causes"])
 
-    @patch("agents.diagnostic_agent.diagnostic_agent.ollama_llm")
+    @patch("agents.diagnostic_agent.diagnostic_agent.openrouter_chat_completion")
     @patch("agents.diagnostic_agent.diagnostic_agent.gemini_client")
-    def test_invalid_confidence_uses_safe_fallback(self, gemini, ollama):
+    def test_invalid_confidence_uses_safe_fallback(self, gemini, openrouter):
         self._rag_patch()
         invalid = {**self.valid_response, "confidence": float("nan")}
         gemini.models.generate_content.return_value.text = json.dumps(invalid)
-        ollama.invoke.return_value.content = "not json"
+        openrouter.return_value = "not json"
 
         result = diagnostic_agent(self.event)
 
@@ -120,12 +121,12 @@ class TestDiagnosticAgent(unittest.TestCase):
         self.assertFalse(result.root_cause_confirmed)
         self.assertIn("No validated LLM diagnostic result is available.", result.unknowns)
 
-    @patch("agents.diagnostic_agent.diagnostic_agent.ollama_llm")
+    @patch("agents.diagnostic_agent.diagnostic_agent.openrouter_chat_completion")
     @patch("agents.diagnostic_agent.diagnostic_agent.gemini_client")
-    def test_provider_failures_return_safe_fallback(self, gemini, ollama):
+    def test_provider_failures_return_safe_fallback(self, gemini, openrouter):
         self._rag_patch()
         gemini.models.generate_content.side_effect = TimeoutError()
-        ollama.invoke.side_effect = TimeoutError()
+        openrouter.side_effect = TimeoutError()
 
         result = diagnostic_agent(self.event)
 
@@ -135,8 +136,88 @@ class TestDiagnosticAgent(unittest.TestCase):
         self.assertEqual(result.confidence, 0.0)
         self.assertEqual(
             result.provider_errors,
-            ["Gemini: TimeoutError", "Ollama: TimeoutError"],
+            ["Gemini: TimeoutError", "OpenRouter: TimeoutError"],
         )
+
+    @patch("agents.diagnostic_agent.diagnostic_agent.openrouter_chat_completion")
+    @patch("agents.diagnostic_agent.diagnostic_agent.gemini_client")
+    def test_isolation_forest_event_metadata_reaches_diagnostic_prompt(
+        self,
+        gemini,
+        openrouter,
+    ):
+        self._rag_patch()
+        gemini.models.generate_content.return_value.text = json.dumps(
+            self.valid_response
+        )
+        event = replace(
+            self.event,
+            detection_rule="ISOLATION_FOREST",
+            attack_type=None,
+            evidence=["Feature deviation: byte_0_mean=250.0"],
+            metadata={
+                "anomaly_score": 0.42,
+                "model_provenance": "HCRL Car-Hacking Dataset",
+                "calibration_status": "not_independently_calibrated",
+                "unseen_can_ids": [0x700],
+            },
+        )
+
+        diagnostic_agent(event)
+
+        prompt = gemini.models.generate_content.call_args.kwargs["contents"]
+        event_data = prompt.split("EVENT:\n", 1)[1].split(
+            "\n\nReturn exactly this JSON structure:",
+            1,
+        )[0]
+        serialized_event = json.loads(event_data)
+        self.assertEqual(serialized_event["detection_rule"], "ISOLATION_FOREST")
+        self.assertEqual(serialized_event["metadata"]["anomaly_score"], 0.42)
+        self.assertEqual(
+            serialized_event["metadata"]["model_provenance"],
+            "HCRL Car-Hacking Dataset",
+        )
+        self.assertEqual(
+            serialized_event["metadata"]["calibration_status"],
+            "not_independently_calibrated",
+        )
+        self.assertEqual(serialized_event["metadata"]["unseen_can_ids"], [0x700])
+        self.assertEqual(
+            serialized_event["evidence"],
+            ["Feature deviation: byte_0_mean=250.0"],
+        )
+        openrouter.assert_not_called()
+
+    @patch("agents.diagnostic_agent.diagnostic_agent.openrouter_chat_completion")
+    @patch("agents.diagnostic_agent.diagnostic_agent.gemini_client")
+    def test_gemini_quota_error_falls_back_to_openrouter(
+        self,
+        gemini,
+        openrouter,
+    ):
+        self._rag_patch()
+        gemini.models.generate_content.side_effect = RuntimeError(
+            "429 RESOURCE_EXHAUSTED"
+        )
+        openrouter.return_value = json.dumps(self.valid_response)
+
+        result = diagnostic_agent(self.event)
+
+        self.assertEqual(result.analysis_method, "OpenRouter")
+        self.assertEqual(result.provider_errors, ["Gemini: RuntimeError"])
+        openrouter.assert_called_once()
+
+    @patch("agents.diagnostic_agent.diagnostic_agent.openrouter_chat_completion")
+    @patch("agents.diagnostic_agent.diagnostic_agent.gemini_client")
+    def test_gemini_timeout_falls_back_to_openrouter(self, gemini, openrouter):
+        self._rag_patch()
+        gemini.models.generate_content.side_effect = TimeoutError()
+        openrouter.return_value = json.dumps(self.valid_response)
+
+        result = diagnostic_agent(self.event)
+
+        self.assertEqual(result.analysis_method, "OpenRouter")
+        self.assertEqual(result.provider_errors, ["Gemini: TimeoutError"])
 
 
 if __name__ == "__main__":

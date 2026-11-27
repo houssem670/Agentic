@@ -19,6 +19,7 @@ from agents.report_agent.report_agent import (
 class WorkflowState(TypedDict):
     event: SecurityEvent
     assessment: SecurityAssessment
+    security_provider: str
     diagnostic: DiagnosticReport
     report: str
     report_path: str
@@ -64,8 +65,16 @@ def security_node(state: WorkflowState) -> dict:
     started_at = perf_counter()
     try:
         assessment = security_agent(state["event"])
+        security_provider = getattr(assessment, "provider", "Unknown")
+        if not isinstance(security_provider, str) or security_provider not in {
+            "Gemini",
+            "OpenRouter",
+            "Safe fallback",
+        }:
+            security_provider = "Unknown"
         return {
             "assessment": assessment,
+            "security_provider": security_provider,
             "agent_trace": state.get("agent_trace", []) + [
                 _trace_entry("Security Agent", "completed", started_at)
             ],
@@ -90,10 +99,12 @@ def security_node(state: WorkflowState) -> dict:
             unknowns=[
                 "The security assessment could not be completed."
             ],
+            provider="Safe fallback",
         )
 
         return {
             "assessment": assessment,
+            "security_provider": "Safe fallback",
             "errors": state.get("errors", []) + [error],
             "agent_trace": state.get("agent_trace", []) + [
                 _trace_entry(
@@ -176,6 +187,7 @@ def report_node(state: WorkflowState) -> dict:
             event=state["event"],
             assessment=state["assessment"],
             diagnostic=state["diagnostic"],
+            security_provider=state.get("security_provider", "Unknown"),
         )
 
     except Exception as exc:
@@ -188,6 +200,13 @@ def report_node(state: WorkflowState) -> dict:
         event = state["event"]
         assessment = state["assessment"]
         diagnostic = state["diagnostic"]
+        security_provider = state.get("security_provider", "Unknown")
+        if not isinstance(security_provider, str) or security_provider not in {
+            "Gemini",
+            "OpenRouter",
+            "Safe fallback",
+        }:
+            security_provider = "Unknown"
 
         report = f"""# Automotive CAN Security Report
 
@@ -205,6 +224,7 @@ def report_node(state: WorkflowState) -> dict:
 - Detection evidence: {', '.join(event.evidence) or 'Not recorded'}
 
 ## Security Assessment
+- Provider: {security_provider}
 - Risk level: {assessment.risk_level}
 - Summary: {assessment.summary}
 
@@ -288,6 +308,7 @@ def run_workflow(
     initial_state: WorkflowState = {
         "event": event,
         "assessment": SecurityAssessment(),
+        "security_provider": "Unknown",
         "diagnostic": DiagnosticReport(),
         "report": "",
         "report_path": "",

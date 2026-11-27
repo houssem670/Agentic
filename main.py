@@ -1,4 +1,6 @@
 import argparse
+import math
+import pickle
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Sequence
@@ -31,6 +33,11 @@ RULE_WINDOW_SECONDS = 5.0
 ML_WINDOW_SECONDS = 1.0
 TRAINING_DURATION = 300.0
 MODEL_PATH = Path("models/ml_detector.joblib")
+HCRL_MODEL_PATH = Path("models/hcrl_ml_detector.joblib")
+HCRL_MODEL_PROVENANCE = (
+    "HCRL Car-Hacking Dataset (models/hcrl_ml_detector.joblib)"
+)
+HCRL_DATA_PROVENANCE = "HCRL_BENCHMARK"
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -47,7 +54,16 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default="vcan0",
         help="source du trafic CAN",
     )
-    return parser.parse_args(argv)
+    parser.add_argument(
+        "--ml-model",
+        choices=("default", "hcrl"),
+        default="default",
+        help="modèle ML à sélectionner sans remplacer le modèle par défaut",
+    )
+    arguments = parser.parse_args(argv)
+    if arguments.ml_model == "hcrl" and arguments.detector == "rules":
+        parser.error("--ml-model hcrl requires --detector ml or both")
+    return arguments
 
 
 def _load_or_train_ml_detector() -> MLAnomalyDetector:
@@ -68,6 +84,107 @@ def _load_or_train_ml_detector() -> MLAnomalyDetector:
     ).fit(training_records)
     MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(detector, MODEL_PATH)
+    return detector
+
+
+def _load_hcrl_ml_detector() -> MLAnomalyDetector:
+    if not HCRL_MODEL_PATH.is_file():
+        raise FileNotFoundError(
+            f"HCRL ML model not found at {HCRL_MODEL_PATH}; "
+            "no default-model fallback or training was attempted."
+        )
+
+    try:
+        detector = joblib.load(HCRL_MODEL_PATH)
+    except (
+        AttributeError,
+        EOFError,
+        ImportError,
+        IndexError,
+        KeyError,
+        OSError,
+        pickle.UnpicklingError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        raise RuntimeError(
+            f"Could not load HCRL ML model at {HCRL_MODEL_PATH}: "
+            f"{type(exc).__name__}."
+        ) from exc
+
+    if not isinstance(detector, MLAnomalyDetector):
+        raise TypeError(
+            f"HCRL ML model at {HCRL_MODEL_PATH} is not an MLAnomalyDetector."
+        )
+
+    window_seconds = getattr(detector, "window_seconds", None)
+    if (
+        isinstance(window_seconds, bool)
+        or not isinstance(window_seconds, (int, float))
+        or not math.isfinite(window_seconds)
+        or window_seconds != ML_WINDOW_SECONDS
+    ):
+        raise ValueError(
+            f"HCRL ML model at {HCRL_MODEL_PATH} must use "
+            f"{ML_WINDOW_SECONDS:g}-second windows."
+        )
+
+    models = getattr(detector, "_models", None)
+    thresholds = getattr(detector, "_calibrated_thresholds", None)
+    calibration_status = getattr(detector, "_calibration_status", None)
+    if not isinstance(models, dict) or not models:
+        raise ValueError(f"HCRL ML model at {HCRL_MODEL_PATH} has no trained CAN IDs.")
+    if not isinstance(thresholds, dict):
+        raise ValueError(
+            f"HCRL ML model at {HCRL_MODEL_PATH} has invalid calibration metadata."
+        )
+    if calibration_status == "not_independently_calibrated":
+        if thresholds:
+            raise ValueError(
+                f"HCRL ML model at {HCRL_MODEL_PATH} has inconsistent "
+                "uncalibrated threshold metadata."
+            )
+        print(
+            "[ML] Warning: the HCRL model is not independently calibrated; "
+            "its Isolation Forest scores are not probabilities."
+        )
+    elif calibration_status == "calibrated_from_independent_normal_data":
+        target_fpr = getattr(
+            detector,
+            "_calibration_target_false_positive_rate",
+            None,
+        )
+        sample_counts = getattr(detector, "_calibration_sample_counts", None)
+        if (
+            set(thresholds) != set(models)
+            or not isinstance(target_fpr, (int, float))
+            or isinstance(target_fpr, bool)
+            or not math.isfinite(target_fpr)
+            or not 0.0 < target_fpr < 1.0
+            or not isinstance(sample_counts, dict)
+            or set(sample_counts) != set(models)
+            or any(
+                not isinstance(count, int)
+                or isinstance(count, bool)
+                or count < 1
+                for count in sample_counts.values()
+            )
+            or any(
+                not isinstance(threshold, (int, float))
+                or isinstance(threshold, bool)
+                or not math.isfinite(threshold)
+                for threshold in thresholds.values()
+            )
+        ):
+            raise ValueError(
+                f"HCRL ML model at {HCRL_MODEL_PATH} has invalid calibrated "
+                "threshold metadata."
+            )
+    else:
+        raise ValueError(
+            f"HCRL ML model at {HCRL_MODEL_PATH} has missing or unsupported "
+            "calibration status."
+        )
     return detector
 
 
@@ -126,9 +243,14 @@ def ml_prediction_to_event(
     detector: MLAnomalyDetector,
     channel: str,
     started_at: datetime,
+    model_provenance: str | None = None,
+    calibration_status: str | None = None,
+    data_provenance: str | None = None,
 ) -> SecurityEvent:
     if not prediction.is_anomaly:
         raise ValueError("Une prédiction normale ne peut pas produire un événement.")
+    if data_provenance not in (None, HCRL_DATA_PROVENANCE):
+        raise ValueError("Unsupported data provenance for an ML event.")
 
     window_records = [
         record
@@ -141,6 +263,23 @@ def ml_prediction_to_event(
         f"Score d'anomalie Isolation Forest (relatif, non probabiliste) : "
         f"{prediction.anomaly_score:.6f}"
     ]
+    if model_provenance is not None:
+        evidence.append(f"Provenance du modèle : {model_provenance}")
+    if calibration_status is not None:
+        evidence.append(f"Statut de calibration : {calibration_status}")
+    if model_provenance is not None and prediction.unseen_can_ids:
+        unseen_ids = ", ".join(
+            f"0x{can_id:03X}" for can_id in prediction.unseen_can_ids
+        )
+        evidence.append(
+            f"CAN IDs inédits (unseen / requires review; non évalués par ML) : "
+            f"{unseen_ids}"
+        )
+    if model_provenance is not None:
+        evidence.append(
+            "message_count et observed_rate décrivent toutes les trames de la "
+            "fenêtre, pas uniquement les IDs signalés."
+        )
 
     for can_id, formatted_id in zip(can_ids, formatted_ids):
         evidence.append(f"CAN ID : {formatted_id}")
@@ -157,9 +296,28 @@ def ml_prediction_to_event(
             )
 
     window_seconds = prediction.end - prediction.start
-    provenance = (
+    provenance = data_provenance or (
         "SYNTHETIC_TEST_FIXTURE" if channel == "simulated" else "LIVE_CAPTURE"
     )
+    metadata = {
+        "detector": "isolation_forest",
+        "anomaly_score": prediction.anomaly_score,
+        "window_start": prediction.start,
+        "window_end": prediction.end,
+        "anomalous_can_ids": list(can_ids),
+        "data_provenance": provenance,
+    }
+    if model_provenance is not None:
+        metadata.update(
+            {
+                "model_provenance": model_provenance,
+                "calibration_status": calibration_status,
+                "unseen_can_ids": list(prediction.unseen_can_ids),
+                "message_count_scope": "all_frames_in_window",
+                "observed_rate_scope": "all_frames_in_window",
+            }
+        )
+
     return SecurityEvent(
         event_id=f"ML-{uuid4().hex[:12]}",
         timestamp=started_at + timedelta(seconds=prediction.start),
@@ -175,14 +333,7 @@ def ml_prediction_to_event(
         anomaly=True,
         attack_type=None,
         evidence=evidence,
-        metadata={
-            "detector": "isolation_forest",
-            "anomaly_score": prediction.anomaly_score,
-            "window_start": prediction.start,
-            "window_end": prediction.end,
-            "anomalous_can_ids": list(can_ids),
-            "data_provenance": provenance,
-        },
+        metadata=metadata,
     )
 
 
@@ -191,21 +342,44 @@ def _ml_events(
     detector: MLAnomalyDetector,
     channel: str,
     started_at: datetime,
+    model_provenance: str | None = None,
+    calibration_status: str | None = None,
 ) -> list[SecurityEvent]:
-    return [
-        ml_prediction_to_event(
-            prediction,
-            records,
-            detector,
-            channel,
-            started_at,
-        )
-        for prediction in detector.predict(records)
-        if prediction.is_anomaly
-    ]
+    events = []
+    for prediction in detector.predict(records):
+        if model_provenance is not None and prediction.unseen_can_ids:
+            can_ids = ", ".join(
+                f"0x{can_id:03X}" for can_id in prediction.unseen_can_ids
+            )
+            print(
+                f"[ML] Unseen CAN IDs — unseen / requires review: {can_ids}. "
+                "Not classified as confirmed attacks."
+            )
+        if prediction.is_anomaly:
+            events.append(
+                ml_prediction_to_event(
+                    prediction,
+                    records,
+                    detector,
+                    channel,
+                    started_at,
+                    model_provenance=model_provenance,
+                    calibration_status=calibration_status,
+                )
+            )
+    return events
 
 
-def main(detector: str = "rules", source: str = "vcan0") -> None:
+def main(
+    detector: str = "rules",
+    source: str = "vcan0",
+    ml_model: str = "default",
+) -> None:
+    if ml_model not in ("default", "hcrl"):
+        raise ValueError("ml_model must be 'default' or 'hcrl'")
+    if ml_model == "hcrl" and detector == "rules":
+        raise ValueError("--ml-model hcrl requires detector='ml' or detector='both'")
+
     print("=" * 45)
     print(" AUTOMOTIVE CAN SECURITY PLATFORM ")
     print("=" * 45)
@@ -252,9 +426,23 @@ def main(detector: str = "rules", source: str = "vcan0") -> None:
                 )
 
         if detector in ("ml", "both"):
-            ml_detector = _load_or_train_ml_detector()
+            if ml_model == "hcrl":
+                ml_detector = _load_hcrl_ml_detector()
+                model_provenance = HCRL_MODEL_PROVENANCE
+                calibration_status = ml_detector._calibration_status
+            else:
+                ml_detector = _load_or_train_ml_detector()
+                model_provenance = None
+                calibration_status = None
             detections.extend(
-                _ml_events(records, ml_detector, source, started_at)
+                _ml_events(
+                    records,
+                    ml_detector,
+                    source,
+                    started_at,
+                    model_provenance=model_provenance,
+                    calibration_status=calibration_status,
+                )
             )
 
     print("\n=== SECURITY ANALYSIS & DIAGNOSTICS ===")
@@ -321,4 +509,8 @@ def main(detector: str = "rules", source: str = "vcan0") -> None:
 
 if __name__ == "__main__":
     arguments = _parse_args()
-    main(detector=arguments.detector, source=arguments.source)
+    main(
+        detector=arguments.detector,
+        source=arguments.source,
+        ml_model=arguments.ml_model,
+    )

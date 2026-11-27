@@ -10,7 +10,7 @@ class SecurityAssessment:
     SecurityEvent contains measured/deterministic facts.
     SecurityAssessment contains the security interpretation
     produced by the Security Agent.
-    """ 
+    """
 
     # ==========================================================
     # Threat classification
@@ -58,3 +58,5 @@ class SecurityAssessment:
     # ==========================================================
 
     confidence: Optional[float] = None
+
+    provider: str = "Unknown"

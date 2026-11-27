@@ -5,8 +5,8 @@ import os
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from langchain_ollama import ChatOllama
 
+from agents.openrouter_provider import openrouter_chat_completion
 from models.security_assessment import SecurityAssessment
 
 from rag.rag_pipeline import build_rag_context
@@ -25,21 +25,25 @@ load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+PROVIDER_TIMEOUT_SECONDS = 30
 
 gemini_client = None
 
 if GEMINI_API_KEY:
-    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+    gemini_client = genai.Client(
+        api_key=GEMINI_API_KEY,
+        http_options=types.HttpOptions(
+            timeout=PROVIDER_TIMEOUT_SECONDS * 1000,
+        ),
+    )
 
 
 # ==============================================================
-# Ollama fallback configuration
+# OpenRouter fallback configuration
 # ==============================================================
 
-ollama_llm = ChatOllama(
-    model="llama3.2:3b",
-    temperature=0,
-)
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL")
 
 
 # ==============================================================
@@ -348,11 +352,12 @@ Return ONLY valid JSON.
 """
 
     # ==========================================================
-    # Primary LLM: Gemini, with Ollama fallback
+    # Primary LLM: Gemini, with OpenRouter fallback
     # ==========================================================
 
     data = None
     errors = []
+    selected_provider = "Unknown"
 
     providers = []
     if gemini_client is not None:
@@ -360,10 +365,10 @@ Return ONLY valid JSON.
     else:
         print(
             "[Security Agent] GEMINI_API_KEY not configured. "
-            "Using Ollama fallback."
+            "Using OpenRouter fallback."
         )
 
-    providers.append(("Ollama", "ollama"))
+    providers.append(("OpenRouter", "openrouter"))
 
     for provider_name, provider in providers:
         try:
@@ -378,8 +383,11 @@ Return ONLY valid JSON.
                 )
                 raw_content = (response.text or "").strip()
             else:
-                response = ollama_llm.invoke(prompt)
-                raw_content = (response.content or "").strip()
+                raw_content = openrouter_chat_completion(
+                    prompt,
+                    OPENROUTER_API_KEY,
+                    OPENROUTER_MODEL,
+                )
 
             if not raw_content:
                 raise ValueError("Empty model response.")
@@ -390,23 +398,24 @@ Return ONLY valid JSON.
                 raise ValueError("Response must be a JSON object.")
 
             data = parsed
+            selected_provider = provider_name
             print(
                 f"[Security Agent] Analysis performed using "
-                f"{provider_name}{' fallback' if provider == 'ollama' else ''}."
+                f"{provider_name}{' fallback' if provider == 'openrouter' else ''}."
             )
             break
 
         except Exception as exc:
-            errors.append(f"{provider_name}: {type(exc).__name__}: {exc}")
+            errors.append(f"{provider_name}: {type(exc).__name__}")
             if provider == "gemini":
                 print(
                     "[Security Agent] Gemini failed or returned invalid JSON. "
-                    "Falling back to Ollama."
+                    "Falling back to OpenRouter."
                 )
 
     if data is None:
         raise RuntimeError(
-            "Both Gemini and Ollama failed to provide valid JSON. "
+            "Both Gemini and OpenRouter failed to provide valid JSON. "
             + " | ".join(errors)
         )
 
@@ -490,4 +499,5 @@ Return ONLY valid JSON.
         investigation_steps=investigation_steps,
         mitigation_actions=mitigation_actions,
         confidence=confidence,
+        provider=selected_provider,
     )

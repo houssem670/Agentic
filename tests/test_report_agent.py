@@ -1,4 +1,5 @@
 import unittest
+from dataclasses import replace
 from datetime import datetime, timezone
 
 from models.security_event import SecurityEvent
@@ -56,15 +57,61 @@ class TestReportAgent(unittest.TestCase):
         self.assertIn("MEDIUM", report)
         self.assertIn("| Scenario ID | REPLAY-SYNTH-001 |", report)
 
+    def test_hcrl_ml_report_contains_score_provenance_ids_and_features(self):
+        event = replace(
+            self.event,
+            can_id="0x2B0",
+            detection_rule="ISOLATION_FOREST",
+            attack_type=None,
+            evidence=[
+                "Isolation Forest score (relative, not probabilistic): 0.123456",
+                "Model provenance: HCRL Car-Hacking Dataset",
+                "Calibration status: not_independently_calibrated",
+                "Known anomalous CAN ID: 0x2B0",
+                "Unseen CAN ID: 0x700 (unseen / requires review)",
+                "Feature deviation: byte_0_mean=250.000",
+            ],
+            metadata={
+                "anomaly_score": 0.123456,
+                "model_provenance": "HCRL Car-Hacking Dataset",
+                "calibration_status": "not_independently_calibrated",
+                "anomalous_can_ids": [0x2B0],
+                "unseen_can_ids": [0x700],
+                "data_provenance": "HCRL_BENCHMARK",
+            },
+        )
+        diagnostic = replace(self.diagnostic, analysis_method="MOCK")
+
+        report = generate_security_report(
+            event,
+            self.assessment,
+            diagnostic,
+            security_provider="OpenRouter",
+        )
+
+        self.assertIn("| Data provenance | HCRL_BENCHMARK |", report)
+        self.assertIn("| Provider | OpenRouter |", report)
+        self.assertIn("0.123456", report)
+        self.assertIn("HCRL Car-Hacking Dataset", report)
+        self.assertIn("not_independently_calibrated", report)
+        self.assertIn("0x2B0", report)
+        self.assertIn("0x700", report)
+        self.assertIn("byte_0_mean=250.000", report)
+        self.assertIn("unseen / requires review", report)
+
     def test_report_handles_missing_information(self):
         assessment = SecurityAssessment()
         diagnostic = DiagnosticReport()
 
         report = generate_security_report(
-            self.event, assessment, diagnostic
+            self.event,
+            assessment,
+            diagnostic,
+            security_provider="unverified provider",
         )
 
         self.assertIn("No security summary provided.", report)
+        self.assertIn("| Provider | Unknown |", report)
         self.assertIn("Not available", report)
 
     def test_save_report_creates_file(self):

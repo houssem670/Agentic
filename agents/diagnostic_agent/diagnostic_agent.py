@@ -6,8 +6,8 @@ import os
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from langchain_ollama import ChatOllama
 
+from agents.openrouter_provider import openrouter_chat_completion
 from models.security_event import SecurityEvent
 from models.diagnostic_report import DiagnosticReport
 from rag.rag_pipeline import build_rag_context
@@ -20,7 +20,7 @@ from rag.rag_pipeline import build_rag_context
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = os.getenv(                
+GEMINI_MODEL = os.getenv(
     "GEMINI_MODEL",
     "gemini-2.5-flash",
 )
@@ -34,11 +34,8 @@ gemini_client = (
     else None
 )
 
-ollama_llm = ChatOllama(
-    model="llama3.2:3b",
-    temperature=0,
-    client_kwargs={"timeout": 30},
-)
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL")
 
 
 def _parse_diagnostic_response(
@@ -139,7 +136,7 @@ def diagnostic_agent(
         "message_count": event.message_count,
         "window_seconds": event.window_seconds,
         "observed_rate": event.observed_rate,
-        "detection_rule": event.detection_rule,  
+        "detection_rule": event.detection_rule,
         "threshold": event.threshold,
         "anomaly": event.anomaly,
         "attack_type": event.attack_type,
@@ -237,7 +234,7 @@ Return JSON only, without Markdown fences.
     providers = []
     if gemini_client is not None:
         providers.append(("Gemini", "gemini"))
-    providers.append(("Ollama", "ollama"))
+    providers.append(("OpenRouter", "openrouter"))
 
     errors = []
     for provider_name, provider in providers:
@@ -253,8 +250,11 @@ Return JSON only, without Markdown fences.
                 )
                 raw_content = (response.text or "").strip()
             else:
-                response = ollama_llm.invoke(prompt)
-                raw_content = (response.content or "").strip()
+                raw_content = openrouter_chat_completion(
+                    prompt,
+                    OPENROUTER_API_KEY,
+                    OPENROUTER_MODEL,
+                )
 
             if not raw_content:
                 raise ValueError("Empty provider response.")
